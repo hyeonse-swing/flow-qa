@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Flow QA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23101114'/%3E%3Ctext x='15' y='47' font-size='42' font-family='Georgia' fill='white'%3EF%3C/text%3E%3C/svg%3E">
+  <script src="/design-system/init.js"></script>
+  <link rel="stylesheet" href="/design-system/tokens.css">
+  <link rel="stylesheet" href="/design-system/components.css">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/i18n.js"></script>
+  <script type="module" src="/display.js"></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">F<span>.</span></span>
+        <span class="brand-name"><strong>Flow QA</strong><small data-i18n="brand.subtitle">QA workspace</small></span>
+        <button class="mobile-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="nav" data-i18n="nav.menu">Menu</button>
+      </div>
+      <nav id="nav" aria-label="Main menu" data-i18n-aria-label="nav.label">
+        <p class="nav-caption" data-i18n="nav.caption">WORKSPACE</p>
+        <button type="button" class="nav-item selected" data-view="scenario" aria-current="page"><span class="nav-num">01</span><span data-i18n="nav.scenario">Scenario</span></button>
+        <button type="button" class="nav-item" data-view="library"><span class="nav-num">02</span><span data-i18n="nav.library">Case library</span></button>
+        <button type="button" class="nav-item" data-view="history"><span class="nav-num">03</span><span data-i18n="nav.history">Run history</span></button>
+        <button type="button" class="nav-item" data-view="settings"><span class="nav-num">04</span><span data-i18n="nav.settings">Connections</span></button>
+      </nav>
+      <div class="side-foot"><span class="signal" id="connection-dot" aria-hidden="true"></span><span id="connection-label" data-i18n="top.checkingConnection">Checking connection</span></div>
+    </aside>
+    <main class="main">
+      <header class="topline">
+        <span id="breadcrumb">Workspace / Scenario</span>
+        <div class="top-actions"><span class="topline-right" id="active-indicator" role="status" aria-live="polite" data-i18n="top.waiting">Ready to run</span><button type="button" id="global-stop-btn" class="button quiet" hidden data-i18n="top.stop">Stop task</button><button type="button" id="reconnect-btn" class="text-button" data-i18n="top.reconnect">Reconnect</button><label class="language-control"><span data-i18n="top.language">Language</span><select id="language-select" aria-label="Language" data-i18n-aria-label="top.language"><option value="en">English</option><option value="ko">한국어</option></select></label><button type="button" id="theme-toggle" class="hds-themeToggle" aria-label="Change theme">Theme</button></div>
+      </header>
+      <div class="content">
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+        <section id="view-scenario" class="view">
+          <div class="page-heading">
+            <p class="eyebrow" data-i18n="scenario.eyebrow">01 / SCENARIO</p>
+            <h1><span data-i18n="scenario.headingFirst">Write a flow,</span><br><em data-i18n="scenario.headingSecond">keep the evidence.</em></h1>
+            <p data-i18n="scenario.intro">Define the expected behavior, review the cases, then run them against a selected target.</p>
+          </div>
+          <div class="workflow">
+            <section class="work-section flow-section" aria-labelledby="flow-title">
+              <div class="section-head"><span class="section-number">01</span><div><h2 id="flow-title" data-i18n="scenario.flowTitle">Flow to test</h2><p data-i18n="scenario.flowHelp">Describe the action and the result you expect to see.</p></div></div>
+              <div class="section-body">
+                <label for="flow-input" class="field-label" data-i18n="scenario.flowLabel">Scenario and expected behavior</label>
+                <textarea id="flow-input" rows="11" placeholder="For example: When a user enters a title and selects Add, the same title appears in the list. An empty title shows an error." data-i18n-placeholder="scenario.flowPlaceholder"></textarea>
+                <p class="hint" data-i18n="scenario.flowHint">Generate cases when an AI planner is ready. You can also download the prompt and write them yourself without a model connection.</p>
+                <p id="planner-readiness" class="hint" role="status"></p>
+                <div class="actions flow-actions"><button id="plan-btn" type="button" class="button primary"><span data-i18n="scenario.generate">Generate cases with AI</span><span aria-hidden="true">↗</span></button><button id="prompt-btn" type="button" class="button quiet" data-i18n="scenario.prompt">Download generation prompt</button></div>
+              </div>
+            </section>
+            <section class="work-section draft-section" aria-labelledby="draft-title">
+              <div class="section-head"><span class="section-number">02</span><div><h2 id="draft-title" data-i18n="scenario.reviewTitle">Review cases</h2><p data-i18n="scenario.reviewHelp">Open each case to inspect its actions and expected results.</p></div><span id="draft-status" class="status-pill" data-i18n="scenario.noDraft">No draft</span></div>
+              <div class="section-body">
+                <div class="draft-topline"><span id="draft-source" data-i18n="scenario.sourceNone">Source: none</span><button type="button" class="text-button" id="library-shortcut"><span data-i18n="scenario.fromLibrary">Load from library</span><span aria-hidden="true">↗</span></button></div>
+                <div id="draft-summary" class="summary" aria-live="polite"><p class="summary-empty" data-i18n="scenario.summaryEmpty">No cases to review yet. Load a local example from the library or generate cases from the scenario.</p></div>
+                <div class="draft-actions"><button id="save-btn" type="button" class="button" data-i18n="scenario.save">Save cases separately</button><span data-i18n="scenario.saveHint">Only saved cases can be run.</span></div>
+                <details id="technical-details" class="technical-details">
+                  <summary><span data-i18n="scenario.technical">Edit JSON · Validate · View script</span><span aria-hidden="true">＋</span></summary>
+                  <div class="technical-body">
+                    <label for="suite-editor" class="field-label" data-i18n="scenario.suiteJson">Suite JSON</label>
+                    <textarea id="suite-editor" class="code-editor" rows="13" spellcheck="false" placeholder="Load a local demo case from the library or enter suite JSON." data-i18n-placeholder="scenario.suitePlaceholder"></textarea>
+                    <div class="actions"><button id="new-draft-btn" type="button" class="button quiet" data-i18n="scenario.newDraft">New JSON draft</button><button id="compile-btn" type="button" class="button" data-i18n="scenario.compile">Validate JSON · Generate script</button></div>
+                    <div class="script-head"><h3 data-i18n="scenario.script">Run script</h3><button type="button" id="script-download" class="text-button" disabled data-i18n="scenario.downloadScript">Download script ↓</button></div>
+                    <pre id="script-preview" class="script-preview" data-i18n="scenario.scriptPlaceholder">The script for validated cases will appear here.</pre>
+                  </div>
+                </details>
+              </div>
+            </section>
+            <section class="execution-section" aria-labelledby="run-title">
+              <div class="section-head"><span class="section-number">03</span><div><h2 id="run-title" data-i18n="scenario.runTitle">Review, then run</h2><p data-i18n="scenario.runHelp">Select a target and confirm you have reviewed the cases.</p></div></div>
+              <div class="execution-grid">
+                <div class="target-field"><label for="target-select" class="field-label" data-i18n="scenario.target">Run target</label><select id="target-select"><option value="" data-i18n="scenario.selectTarget">Select a target</option></select><p id="target-description" class="hint" data-i18n="scenario.targetHint">You can add a target in Connections.</p></div>
+                <div class="execution-confirm"><p id="case-readiness" class="hint"></p><label class="review-line"><input type="checkbox" id="review-checkbox"><span data-i18n="scenario.reviewConfirm">I have reviewed the requirements, case steps, and expected results.</span></label><div class="run-bar"><span id="run-readiness" data-i18n="scenario.runInitial">Validated cases and a run target are required.</span><div class="actions"><button type="button" id="stop-btn" class="button quiet" hidden data-i18n="scenario.stop">Stop run</button><button type="button" id="run-btn" class="button primary" disabled><span data-i18n="scenario.run">Run QA</span><span aria-hidden="true">→</span></button></div></div></div>
+              </div>
+            </section>
+          </div>
+        </section>
+        <section id="view-library" class="view" hidden>
+          <div class="page-heading"><p class="eyebrow" data-i18n="library.eyebrow">02 / LIBRARY</p><h1 data-i18n="nav.library">Case library</h1><p data-i18n="library.intro">Cases saved on disk. Local demo examples are not AI generated results.</p></div>
+          <section class="list-section"><div class="section-head"><span class="section-number">01</span><div><h2 data-i18n="library.title">Saved suites</h2><p data-i18n="library.help">Load a suite, then review it on the Scenario page.</p></div></div><div id="library-list" class="list-body"></div></section>
+        </section>
+        <section id="view-history" class="view" hidden>
+          <div class="page-heading"><p class="eyebrow" data-i18n="history.eyebrow">03 / RUNS</p><h1 data-i18n="nav.history">Run history</h1><p data-i18n="history.intro">Only runs that actually started appear here. Once results are saved, you can view the detailed report.</p></div>
+          <section class="list-section"><div class="section-head"><span class="section-number">01</span><div><h2 data-i18n="history.title">Runs</h2><p data-i18n="history.help">Check the completed report for the final status.</p></div></div><div id="history-list" class="list-body"></div></section>
+          <section id="report-panel" class="report-panel" hidden><div class="section-head"><span class="section-number">02</span><div><h2 data-i18n="history.report">Detailed report</h2><p id="report-heading"></p></div></div><div class="section-body"><div class="actions"><button type="button" id="report-md" class="button" data-i18n="history.downloadMarkdown">Download Markdown</button><button type="button" id="report-json" class="button quiet" data-i18n="history.downloadJson">Download JSON</button></div><p class="hint" data-i18n="history.evidenceHint">The report summarizes results. Open or download screenshots and recordings from each attempt. Evidence files are not included in report downloads.</p><div id="report-content"></div></div></section>
+        </section>
+        <section id="view-settings" class="view" hidden>
+          <div class="page-heading"><p class="eyebrow" data-i18n="settings.eyebrow">04 / CONNECTIONS</p><h1 data-i18n="nav.settings">Connections</h1><p data-i18n="settings.intro">Configure run targets and models separately. Key values are read only from server environment variables.</p></div>
+          <div class="runtime-panel"><h2 data-i18n="settings.runtime">Runtime</h2><p id="runtime-status" role="status" data-i18n="settings.runtimeInitial">Checking installation status.</p><p class="hint" data-i18n="settings.runtimeHint">This shows local installation and configuration. Verify target access, sign-in, and model responses with an actual run.</p></div>
+          <section id="display-preferences" class="hds-panel preferences-section" aria-labelledby="preferences-title">
+            <div class="hds-heading"><div><span class="hds-kicker" data-i18n="settings.displayKicker">DISPLAY</span><h2 id="preferences-title" data-i18n="settings.display">Display</h2></div><p data-i18n="settings.displayHelp">Choose a comfortable display.</p></div>
+            <div class="hds-groups">
+              <fieldset class="hds-group"><legend data-i18n="top.theme">Theme</legend><div class="hds-options"><label class="hds-radioOption"><input type="radio" name="theme" value="system"><span data-i18n="settings.themeSystem">System</span></label><label class="hds-radioOption"><input type="radio" name="theme" value="light"><span data-i18n="settings.themeLight">Light</span></label><label class="hds-radioOption"><input type="radio" name="theme" value="dark"><span data-i18n="settings.themeDark">Dark</span></label></div></fieldset>
+              <fieldset class="hds-group"><legend data-i18n="settings.accent">Accent</legend><div class="hds-accents"><label class="hds-radioOption"><input type="radio" name="accent" value="cobalt"><span data-i18n="settings.accentCobalt">Cobalt</span></label><label class="hds-radioOption"><input type="radio" name="accent" value="forest"><span data-i18n="settings.accentForest">Forest</span></label><label class="hds-radioOption"><input type="radio" name="accent" value="coral"><span data-i18n="settings.accentCoral">Coral</span></label></div></fieldset>
+              <fieldset class="hds-group"><legend data-i18n="settings.density">Density</legend><div class="hds-options"><label class="hds-radioOption"><input type="radio" name="density" value="comfortable"><span data-i18n="settings.densityComfortable">Comfortable</span></label><label class="hds-radioOption"><input type="radio" name="density" value="compact"><span data-i18n="settings.densityCompact">Compact</span></label></div></fieldset>
+              <fieldset class="hds-group"><legend data-i18n="settings.corners">Corners</legend><div class="hds-options"><label class="hds-radioOption"><input type="radio" name="corners" value="crisp"><span data-i18n="settings.cornersCrisp">Crisp</span></label><label class="hds-radioOption"><input type="radio" name="corners" value="soft"><span data-i18n="settings.cornersSoft">Soft</span></label></div></fieldset>
+              <fieldset class="hds-group"><legend data-i18n="settings.motion">Motion</legend><div class="hds-options"><label class="hds-radioOption"><input type="radio" name="motion" value="full"><span data-i18n="settings.motionFull">Full</span></label><label class="hds-radioOption"><input type="radio" name="motion" value="reduced"><span data-i18n="settings.motionReduced">Reduced</span></label></div></fieldset>
+            </div>
+            <div class="hds-footer"><p id="preferences-status" aria-live="polite">Your display choices are saved in this browser.</p><button id="reset-preferences" type="button" data-i18n="settings.reset">Reset to defaults</button></div>
+          </section>
+          <div class="settings-grid">
+            <section class="settings-section"><div class="section-head"><span class="section-number">01</span><div><h2 data-i18n="settings.targets">Run targets</h2><p data-i18n="settings.targetsHelp">Add an allowed HTTPS or local address.</p></div></div><form class="section-body form-stack" id="target-form"><label><span data-i18n="settings.targetName">Target name</span><input name="name" required placeholder="e.g. local-demo" data-i18n-placeholder="settings.targetNamePlaceholder" pattern="[A-Za-z0-9][A-Za-z0-9_-]*"></label><label>URL<input name="url" type="url" required placeholder="https://example.com"></label><label><span data-i18n="settings.description">Description</span><textarea name="description" rows="3" placeholder="What this target is for" data-i18n-placeholder="settings.descriptionPlaceholder"></textarea></label><button class="button primary" type="submit" data-i18n="settings.saveTarget">Save target</button><div id="target-list" class="settings-list"></div></form></section>
+            <section class="settings-section"><div class="section-head"><span class="section-number">02</span><div><h2 data-i18n="settings.models">Model connections</h2><p data-i18n="settings.modelsHelp">Manage planner and run agent connections separately.</p></div></div><div class="section-body"><p class="hint" data-i18n="settings.modelsHint">Do not enter or store API key values here. Specify only the name of an environment variable in the server process.</p><div id="model-forms"></div></div></section>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

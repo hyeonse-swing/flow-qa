@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:83:20.000
+Flow QA · from user flow to verified evidence
+
+00:83:20.000 --> 00:200:00.000
+Three local cases · reproducible without a model
+
+00:200:00.000 --> 00:383:20.000
+Review requirements, actions, and expected results
+
+00:383:20.000 --> 00:533:20.000
+Choose a target and approve the cases before running
+
+00:533:20.000 --> 00:766:40.000
+Real Chromium execution · waiting for the report
+
+00:766:40.000 --> 00:883:20.000
+Three passing cases with run-by-run evidence
+
+00:883:20.000 --> 00:1000:00.000
+Switch to Korean without changing the work
+
+00:1000:00.000 --> 00:1083:20.000
+Return to English · planner and agent stay separate

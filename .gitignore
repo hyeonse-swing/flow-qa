@@ -1,0 +1,19 @@
+node_modules/
+.flowqa/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.playwright-cli/
+output/
+*.tgz
+/flowqa.config.json
+/flows/
+/cases/
+/planning/
+/generated/
+
+# Demo video is distributed as a GitHub release asset.
+/docs/media/*.mp4

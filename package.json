@@ -1,0 +1,75 @@
+{
+  "name": "@ihyeon/flow-qa",
+  "version": "0.1.0-alpha.1",
+  "license": "MIT",
+  "author": "Hyeonse Im",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyeonse-swing/flow-qa.git"
+  },
+  "homepage": "https://github.com/hyeonse-swing/flow-qa#readme",
+  "bugs": {
+    "url": "https://github.com/hyeonse-swing/flow-qa/issues"
+  },
+  "keywords": [
+    "qa",
+    "e2e",
+    "testing",
+    "cli",
+    "ai",
+    "local-first"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "dist",
+    "licenses",
+    "docs/*.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.ko.md"
+  ],
+  "bundleDependencies": [
+    "@hyeonse/design-system"
+  ],
+  "description": "Turn user flows into repeatable tests and evidence-backed QA reports.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "flow-qa": "./dist/bin/flow-qa.mjs"
+  },
+  "scripts": {
+    "qa": "node bin/flow-qa.mjs",
+    "ui": "node src/ui/entry.ts",
+    "ui:demo": "node src/ui/entry.ts --demo",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "check:package": "npm run build && node scripts/check-package.mjs",
+    "smoke:package": "node scripts/package-smoke.mjs",
+    "check": "npm run typecheck && npm test && npm run check:ui",
+    "check:ui": "node --check src/ui/public/app.js && node --check src/ui/public/display.js && node --check src/ui/public/i18n.js && hds-audit .",
+    "demo:serve": "node examples/demo/server.ts",
+    "demo:smoke": "node scripts/demo-smoke.ts",
+    "smoke:ui": "node scripts/ui-i18n-smoke.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.53",
+    "@e2e-dev/web": "0.11.1",
+    "@hyeonse/design-system": "https://codeload.github.com/hyeonse-swing/hyeonse-design-system/tar.gz/38978c6a86f422fc0e63e919f600bc2dd3451e5c",
+    "ai": "7.0.107",
+    "e2e": "0.16.0",
+    "playwright": "1.63.0",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}
