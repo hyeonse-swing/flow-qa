@@ -8,14 +8,13 @@ Flow QA turns a user flow into reviewable test cases, runs them in a real browse
 
 ![Flow QA local demo](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-demo.png)
 
-[Watch the one-minute demo](https://github.com/hyeonse-swing/flow-qa/releases/download/v0.1.0-alpha.1/flow-qa-demo.mp4) · Load a local to-do app example, review its cases, run them in Chromium, and inspect the report. The 67-second recording uses the English UI, runs three fixed cases without a model, and demonstrates switching to Korean.
 
 ## Try the local demo
 
 Requires Node.js 24 or later. Install Chromium before the first run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.1
+npm install -g @ihyeon/flow-qa@0.1.0-alpha.2
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -66,6 +65,8 @@ For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command a
 - Cancellation records an interrupted run. Canceling generation prevents a late response from changing the draft, but does not guarantee cancellation of a provider's processing or charges. The UI shows token use and estimated cost only when the engine supplies them; there is no overall cost cap.
 
 Reports and raw evidence can contain data from the tested app. `.flowqa/` is Git-ignored, but inspect files before sharing them. Redaction cannot be assumed to catch every personal detail. Session setup, mobile devices, scheduled CI runs, team permissions, and a shared server are outside this alpha's scope.
+
+![QA report from three real passing cases](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 
 ## Implementation and credits
 

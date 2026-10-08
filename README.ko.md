@@ -8,14 +8,13 @@
 
 ![로컬 데모 화면](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-demo.png)
 
-[1분 데모 영상](https://github.com/hyeonse-swing/flow-qa/releases/download/v0.1.0-alpha.1/flow-qa-demo.mp4) · 로컬 할 일 앱에서 예제 불러오기 → 케이스 검토 → 실제 Chromium 실행 → 리포트 확인. 영상은 모델 없이 고정된 세 케이스를 실행합니다.
 
 ## 로컬 데모 시작
 
-Node.js 24 이상이 필요합니다. 패키지는 `@ihyeon/flow-qa@0.1.0-alpha.1`입니다. 브라우저는 첫 실행 전에 설치합니다.
+Node.js 24 이상이 필요합니다. 패키지는 `@ihyeon/flow-qa@0.1.0-alpha.2`입니다. 브라우저는 첫 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.1
+npm install -g @ihyeon/flow-qa@0.1.0-alpha.2
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -66,6 +65,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 - 취소한 실행은 중단으로 기록합니다. UI의 생성 취소는 늦게 도착한 응답을 반영하지 않지만 모델 제공자의 처리나 과금 취소를 보장하지 않습니다. 엔진의 토큰·추정 비용만 표시하며 전체 비용 상한은 없습니다.
 
 리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 기기, 예약 CI 실행, 팀 권한과 공유 서버는 이 알파의 지원 범위 밖입니다.
+
+![실제 세 케이스 실행 결과](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 
 ## 구현과 출처
 
