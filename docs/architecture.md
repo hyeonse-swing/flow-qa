@@ -35,4 +35,4 @@ flowchart LR
 | Results | A fresh report per run, status interpretation, evidence links | Raw runs and evidence from the engine |
 | UI | Local workflow screens and English/Korean language switch | [Hyeonse Design System](https://github.com/hyeonse-swing/hyeonse-design-system) tokens and preference utilities |
 
-The UI binds only to `127.0.0.1` and serves approved report evidence, not arbitrary raw logs or HTML/SVG. Local reports may still contain data from the tested app and should be reviewed before sharing. This alpha does not manage login sessions, cap model spending, schedule CI runs, or support mobile devices.
+The UI binds only to `127.0.0.1` and serves approved report evidence, not arbitrary raw logs or HTML/SVG. Local reports may still contain data from the tested app and should be reviewed before sharing. This release does not manage login sessions, cap model spending, schedule CI runs, or support mobile devices.

@@ -1,6 +1,22 @@
-# Alpha release and verification
+# Releases and verification
 
-## 0.1.0-alpha.3
+The alpha entries below are historical release records. They document earlier package versions and checks.
+
+## 0.1.1
+
+This release uses plain semver and the npm `latest` dist-tag. It includes the runtime fixes documented in the historical entry below, with no additional runtime changes. The existing runtime passed 47 tests and the browser checks recorded there. Version 0.1.1 metadata, package contents, and a fresh consumer installation were also verified: the installed `flow-qa` command worked and all three Chromium demo cases passed without model calls.
+
+- Package target: [`@ihyeon/flow-qa@0.1.1`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.1.1), npm `latest` dist-tag
+- Source and package: [GitHub release](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.1.1)
+- Public checks: [GitHub Actions](https://github.com/hyeonse-swing/flow-qa/actions/workflows/ci.yml)
+
+Use this version when checking the published package:
+
+```sh
+FLOWQA_PACKAGE_SPEC=@ihyeon/flow-qa@0.1.1 npm run smoke:package
+```
+
+## Historical: 0.1.0-alpha.3
 
 This maintenance release keeps the existing CLI, UI, and case schema. It tightens result validation, bounds UI shutdown, and checks the command that npm installs for consumers.
 
@@ -29,7 +45,7 @@ npm run smoke:package
 FLOWQA_PACKAGE_SPEC=@ihyeon/flow-qa@0.1.0-alpha.3 npm run smoke:package
 ```
 
-## 0.1.0-alpha.2
+## Historical: 0.1.0-alpha.2
 
 This update replaces the introductory video link with two UI screenshots. Runtime behavior is unchanged from alpha.1. Media files are not included in the npm tarball.
 

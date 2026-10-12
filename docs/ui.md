@@ -4,10 +4,10 @@ Use the target app's URL and a user flow to review cases, run them, and inspect 
 
 ## Start
 
-Node.js 24 or later is required. Install the alpha and start the local demo:
+Node.js 24 or later is required. Install Flow QA and start the local demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.2
+npm install -g @ihyeon/flow-qa@0.1.1
 flow-qa browser install
 flow-qa ui --demo
 ```

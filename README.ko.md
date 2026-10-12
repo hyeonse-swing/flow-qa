@@ -4,17 +4,17 @@
 
 사용자 플로우를 검토 가능한 테스트 케이스로 바꾸고, 실제 브라우저 실행 결과를 증거가 연결된 QA 리포트로 남기는 로컬 도구입니다. 플로우의 기대 결과가 모호하면 추측해 통과시키지 않고 질문과 차단 상태로 남깁니다.
 
-**공개 알파:** CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하며 상단 언어 전환에서 한국어를 선택할 수 있습니다. 선택은 이 브라우저에 저장됩니다. 테스트 대상의 URL과 화면 계약을 사용하며 앱 소스 또는 데이터베이스 접근은 필수가 아닙니다. 설치 없이 구조를 보려면 [아키텍처](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/architecture.md)와 [UI 안내](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md)를 참고하세요.
+CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하며 상단 언어 전환에서 한국어를 선택할 수 있습니다. 선택은 이 브라우저에 저장됩니다. 테스트 대상의 URL과 화면 계약을 사용하며 앱 소스 또는 데이터베이스 접근은 필수가 아닙니다. 설치 없이 구조를 보려면 [아키텍처](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/architecture.md)와 [UI 안내](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md)를 참고하세요.
 
 ![로컬 데모 화면](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-demo.png)
 
 
 ## 로컬 데모 시작
 
-Node.js 24 이상이 필요합니다. 패키지는 `@ihyeon/flow-qa@0.1.0-alpha.3`입니다. 브라우저는 첫 실행 전에 설치합니다.
+Node.js 24 이상이 필요합니다. 브라우저는 첫 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.3
+npm install -g @ihyeon/flow-qa@0.1.1
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -64,7 +64,7 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 - 실행마다 `.flowqa/runs/<run-id>/`에 새 리포트와 엔진 결과를 만듭니다. `qa-report.json`과 `qa-report.md`는 통과, 실패, 재시도 후 통과, 차단, 오류, 미실행을 구분합니다. assertion 실패는 관찰 결과이며 제품 버그 확정은 아닙니다.
 - 취소한 실행은 중단으로 기록합니다. UI의 생성 취소는 늦게 도착한 응답을 반영하지 않지만 모델 제공자의 처리나 과금 취소를 보장하지 않습니다. 엔진의 토큰·추정 비용만 표시하며 전체 비용 상한은 없습니다.
 
-리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 기기, 예약 CI 실행, 팀 권한과 공유 서버는 이 알파의 지원 범위 밖입니다.
+리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 기기, 예약 CI 실행, 팀 권한과 공유 서버는 현재 지원 범위에 포함되지 않습니다.
 
 ![실제 세 케이스 실행 결과](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 

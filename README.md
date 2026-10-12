@@ -4,7 +4,7 @@
 
 Flow QA turns a user flow into reviewable test cases, runs them in a real browser, and ties the results to evidence in a QA report. When an expected outcome is unclear, it keeps the question visible and blocks that case instead of guessing.
 
-**Public alpha:** a CLI and a web UI bound to `127.0.0.1`. Provide a target URL and describe the screen behavior; access to the application's source code or database is optional. The UI starts in English. Use the language switch in the top bar for Korean; the choice is saved in this browser. See the [architecture](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/architecture.md) and [UI guide](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md) for the details.
+Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a target URL and describe the screen behavior; access to the application's source code or database is optional. The UI starts in English. Use the language switch in the top bar for Korean; the choice is saved in this browser. See the [architecture](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/architecture.md) and [UI guide](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md) for the details.
 
 ![Flow QA local demo](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-demo.png)
 
@@ -14,7 +14,7 @@ Flow QA turns a user flow into reviewable test cases, runs them in a real browse
 Requires Node.js 24 or later. Install Chromium before the first run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.3
+npm install -g @ihyeon/flow-qa@0.1.1
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -64,7 +64,7 @@ For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command a
 - Each run gets a fresh `.flowqa/runs/<run-id>/` directory with engine output and `qa-report.json`/`qa-report.md`. Reports distinguish passed, failed, passed after retry, blocked, error, and skipped cases. A failed assertion is an observation, not proof of a product defect.
 - Cancellation records an interrupted run. Canceling generation prevents a late response from changing the draft, but does not guarantee cancellation of a provider's processing or charges. The UI shows token use and estimated cost only when the engine supplies them; there is no overall cost cap.
 
-Reports and raw evidence can contain data from the tested app. `.flowqa/` is Git-ignored, but inspect files before sharing them. Redaction cannot be assumed to catch every personal detail. Session setup, mobile devices, scheduled CI runs, team permissions, and a shared server are outside this alpha's scope.
+Reports and raw evidence can contain data from the tested app. `.flowqa/` is Git-ignored, but inspect files before sharing them. Redaction cannot be assumed to catch every personal detail. Session setup, mobile devices, scheduled CI runs, team permissions, and a shared server are outside the current scope.
 
 ![QA report from three real passing cases](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 
