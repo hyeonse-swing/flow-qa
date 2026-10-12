@@ -228,9 +228,17 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
     const status = oneOf(result.status, resultStatuses, 'result.status');
     const attempts = array(result.attempts, 'result.attempts').map((attempt) => normalizeAttempt(attempt, context.rawDir));
     if (status !== 'skipped' && attempts.length === 0) throw new Error(`Test result has no attempts: ${id}`);
-    if (status === 'passed' && attempts.at(-1)?.status !== 'passed') throw new Error(`Passed status and attempts disagree: ${id}`);
-    if (status === 'flaky' && (attempts.at(-1)?.status !== 'passed' || !attempts.slice(0, -1).some((attempt) => attempt.status !== 'passed'))) {
+    const finalAttemptStatus = attempts.at(-1)?.status;
+    if (status === 'passed' && (attempts.length !== 1 || attempts[0]?.index !== 0 || finalAttemptStatus !== 'passed')) {
+      throw new Error(`Passed status and attempts disagree: ${id}`);
+    }
+    if (status === 'flaky' && (attempts.length < 2 || finalAttemptStatus !== 'passed'
+      || attempts.some((attempt, index) => attempt.index !== index
+        || (index < attempts.length - 1 && attempt.status !== 'failed' && attempt.status !== 'timed-out')))) {
       throw new Error(`Flaky status and attempts disagree: ${id}`);
+    }
+    if ((status === 'failed' || status === 'timed-out') && finalAttemptStatus === 'passed') {
+      throw new Error(`Failed or timed-out status and attempts disagree: ${id}`);
     }
     if (context.blockedReasons.has(id) && status !== 'skipped') throw new Error(`A blocked case was recorded as executed: ${id}`);
     const skip = result.skip === undefined ? undefined : object(result.skip, 'result.skip');

@@ -81,6 +81,38 @@ test('missing case cannot pass and unsupported, mismatched, or malformed statuse
   assert.throws(() => normalizeReport1(wrongProject, context(root)), /project/);
 });
 
+test('result status agrees with the complete retry history', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const reportContext: ReportContext = { ...context(root), suite: { ...suite, cases: [suite.cases[0]!] }, blockedReasons: new Map() };
+  const normalize = (status: string, attempts: unknown[], runStatus = 'failed') =>
+    normalizeReport1(raw([result('A', status, attempts)], runStatus), reportContext);
+
+  const firstPass = normalize('passed', [attempt(0, 'passed')], 'passed');
+  assert.equal(firstPass.status, 'passed');
+  assert.equal(firstPass.cases[0]?.status, 'passed');
+  assert.match(renderMarkdown(firstPass), /passed/);
+  assert.match(renderMarkdown(firstPass, 'ko'), /통과/);
+
+  const flaky = normalize('flaky', [attempt(0, 'failed'), attempt(1, 'passed')]);
+  assert.equal(flaky.status, 'failed');
+  assert.equal(flaky.cases[0]?.status, 'flaky');
+  assert.deepEqual(flaky.cases[0]?.attempts.map((item) => item.status), ['failed', 'passed']);
+  assert.equal(normalize('flaky', [attempt(0, 'timed-out'), attempt(1, 'passed')]).cases[0]?.status, 'flaky');
+
+  const dynamicSkip = normalize('skipped', [attempt(0, 'skipped')], 'blocked');
+  assert.equal(dynamicSkip.cases[0]?.status, 'skipped');
+  assert.equal(dynamicSkip.cases[0]?.attempts[0]?.status, 'skipped');
+
+  assert.throws(() => normalize('passed', [attempt(0, 'failed'), attempt(1, 'passed')], 'passed'), /Passed status and attempts disagree/);
+  assert.throws(() => normalize('passed', [attempt(1, 'passed')], 'passed'), /Passed status and attempts disagree/);
+  assert.throws(() => normalize('flaky', [attempt(0, 'passed'), attempt(1, 'failed'), attempt(2, 'passed')]), /Flaky status and attempts disagree/);
+  assert.throws(() => normalize('flaky', [attempt(0, 'skipped'), attempt(1, 'passed')]), /Flaky status and attempts disagree/);
+  assert.throws(() => normalize('flaky', [attempt(0, 'failed'), attempt(2, 'passed')]), /Flaky status and attempts disagree/);
+  for (const status of ['failed', 'timed-out']) {
+    assert.throws(() => normalize(status, [attempt(0, 'passed')]), /status and attempts disagree/);
+  }
+});
+
 test('renders untrusted text as text, never as links, HTML, or remote URLs', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
   const report = normalizeReport1(raw([result('A', 'failed', [attempt(0, 'failed')]), result('B', 'passed', [attempt(0, 'passed')]), result('C', 'skipped', [])]), context(root));

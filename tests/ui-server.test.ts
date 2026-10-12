@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -303,6 +305,33 @@ test('closing the server aborts a planner that ignores its signal', async () => 
     } finally { clearTimeout(timer); }
     assert.equal((await pending).status, 409);
   } finally { await app.close(); }
+});
+
+test('close finishes with an authenticated request whose body never completes', async () => {
+  const app = await fixture();
+  const socket = createConnection(Number(new URL(app.server.url).port), '127.0.0.1');
+  socket.on('error', () => undefined);
+  let responded = false;
+  socket.on('data', () => { responded = true; });
+  try {
+    await once(socket, 'connect');
+    const received = once(app.server.server, 'request');
+    socket.write(`POST /api/prompt HTTP/1.1\r\nHost: ${new URL(app.server.url).host}\r\nContent-Type: application/json\r\nX-Flowqa-Token: ${app.token}\r\nContent-Length: 100\r\n\r\n{`);
+    await received;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(responded, false);
+    const closing = app.server.close();
+    assert.strictEqual(app.server.close(), closing);
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([closing, new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('server close waited for an incomplete request body')), 2_000);
+      })]);
+    } finally { clearTimeout(timeout); }
+  } finally {
+    socket.destroy();
+    await app.close();
+  }
 });
 
 test('planner failure guidance never reflects provider secrets or untrusted issue text', async () => {

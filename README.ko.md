@@ -11,10 +11,10 @@
 
 ## 로컬 데모 시작
 
-Node.js 24 이상이 필요합니다. 패키지는 `@ihyeon/flow-qa@0.1.0-alpha.2`입니다. 브라우저는 첫 실행 전에 설치합니다.
+Node.js 24 이상이 필요합니다. 패키지는 `@ihyeon/flow-qa@0.1.0-alpha.3`입니다. 브라우저는 첫 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.2
+npm install -g @ihyeon/flow-qa@0.1.0-alpha.3
 flow-qa browser install
 flow-qa ui --demo
 ```

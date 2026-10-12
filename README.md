@@ -14,7 +14,7 @@ Flow QA turns a user flow into reviewable test cases, runs them in a real browse
 Requires Node.js 24 or later. Install Chromium before the first run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.0-alpha.2
+npm install -g @ihyeon/flow-qa@0.1.0-alpha.3
 flow-qa browser install
 flow-qa ui --demo
 ```

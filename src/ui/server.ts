@@ -627,6 +627,8 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
       closing = true;
       controller?.abort();
       closeTask = (async () => {
+        const stopped = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        server.closeIdleConnections();
         if (requestTasks.size) {
           let requestTimeout: NodeJS.Timeout | undefined;
           try {
@@ -636,8 +638,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
             ]);
           } finally { clearTimeout(requestTimeout); }
         }
-        const stopped = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-        server.closeIdleConnections();
+        server.closeAllConnections();
         await stopped;
         const pending = runTask;
         if (pending) {

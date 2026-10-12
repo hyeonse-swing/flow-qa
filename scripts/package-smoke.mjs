@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -41,13 +41,17 @@ try {
   const metadata = JSON.parse(await readFile(path.join(installed, 'package.json'), 'utf8'));
   assert.equal(metadata.name, expected.name, 'Installed package name must match this release.');
   assert.equal(metadata.version, expected.version, 'Installed package version must match this release.');
-  assert.match(command([bin, '--help'], consumer), /Usage:/);
-  assert.match(command([bin, '--help', '--lang', 'ko'], consumer), /사용법/);
-  command([bin, 'init', 'workspace'], consumer);
-  const doctor = command([bin, 'doctor', '--workspace', 'workspace'], consumer);
+  const shim = path.join(consumer, 'node_modules', '.bin', process.platform === 'win32' ? 'flow-qa.cmd' : 'flow-qa');
+  assert.ok((await stat(shim)).isFile(), 'npm must install the documented flow-qa command.');
+  if (process.platform !== 'win32') assert.equal(await realpath(shim), await realpath(bin));
+  const cli = (...args) => command([npmCLI, 'exec', '--offline', '--no', '--', 'flow-qa', ...args], consumer);
+  assert.match(cli('--help'), /Usage:/);
+  assert.match(cli('--help', '--lang', 'ko'), /사용법/);
+  cli('init', 'workspace');
+  const doctor = cli('doctor', '--workspace', 'workspace');
   assert.match(doctor, /e2e/);
-  assert.match(command([bin, 'browser', 'install', '--help'], consumer), /browser install/);
-  command([bin, 'validate', 'cases/task-flow.json', '--workspace', 'workspace'], consumer);
+  assert.match(cli('browser', 'install', '--help'), /browser install/);
+  cli('validate', 'cases/task-flow.json', '--workspace', 'workspace');
   child = spawn(process.execPath, [bin, 'ui', '--demo', '--port', '0'], { cwd: consumer, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = ''; let errors = '';
   child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { errors += chunk; });
@@ -80,7 +84,7 @@ try {
   report = (await (await get('/api/report?runId=' + finalState.lastRunId)).json()).report;
   assert.equal(report.status, 'passed', JSON.stringify(report.errors));
   assert.equal(report.cases.filter(item => item.status === 'passed').length, 3);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, tests: 3, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 3, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
