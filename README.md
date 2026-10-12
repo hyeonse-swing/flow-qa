@@ -1,5 +1,7 @@
 # Flow QA
 
+[![npm version](https://img.shields.io/npm/v/%40ihyeon%2Fflow-qa?label=npm)](https://www.npmjs.com/package/@ihyeon/flow-qa) · [npm package: @ihyeon/flow-qa](https://www.npmjs.com/package/@ihyeon/flow-qa)
+
 **English** · [한국어](https://github.com/hyeonse-swing/flow-qa/blob/main/README.ko.md)
 
 Flow QA turns a user flow into reviewable test cases, runs them in a real browser, and ties the results to evidence in a QA report. When an expected outcome is unclear, it keeps the question visible and blocks that case instead of guessing.
@@ -14,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Requires Node.js 24 or later. Install Chromium before the first run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.1
+npm install -g @ihyeon/flow-qa@0.1.2
 flow-qa browser install
 flow-qa ui --demo
 ```

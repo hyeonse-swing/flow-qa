@@ -8,7 +8,8 @@ permissions:
   contents: read
 concurrency:
   group: verify-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -35,3 +36,46 @@ jobs:
             output/playwright/i18n/result.json
             .flowqa/verification.md
           if-no-files-found: ignore
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Check release version
+        id: release
+        run: node scripts/npm-release.mjs gate
+      - name: Install and check release package
+        if: steps.release.outputs.release_candidate == 'true'
+        run: |
+          npm ci
+          npm run check:package
+      - name: Publish to npm
+        if: steps.release.outputs.should_publish == 'true'
+        run: |
+          npm install --global npm@11.21.0
+          npm publish --access public --provenance
+      - name: Confirm npm registry release
+        if: steps.release.outputs.release_candidate == 'true'
+        env:
+          FLOWQA_REQUIRE_LATEST: ${{ steps.release.outputs.should_publish }}
+        run: node scripts/npm-release.mjs verify
+      - name: Smoke test published package
+        if: steps.release.outputs.release_candidate == 'true'
+        env:
+          FLOWQA_PACKAGE_SPEC: '@ihyeon/flow-qa@${{ steps.release.outputs.version }}'
+        run: |
+          npm run qa -- browser install --with-deps
+          npm run smoke:package

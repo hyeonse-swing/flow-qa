@@ -1,5 +1,7 @@
 # Flow QA
 
+[![npm 버전](https://img.shields.io/npm/v/%40ihyeon%2Fflow-qa?label=npm)](https://www.npmjs.com/package/@ihyeon/flow-qa) · [npm 패키지: @ihyeon/flow-qa](https://www.npmjs.com/package/@ihyeon/flow-qa)
+
 [English](https://github.com/hyeonse-swing/flow-qa/blob/main/README.md) · **한국어**
 
 사용자 플로우를 검토 가능한 테스트 케이스로 바꾸고, 실제 브라우저 실행 결과를 증거가 연결된 QA 리포트로 남기는 로컬 도구입니다. 플로우의 기대 결과가 모호하면 추측해 통과시키지 않고 질문과 차단 상태로 남깁니다.
@@ -14,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24 이상이 필요합니다. 브라우저는 첫 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.1
+npm install -g @ihyeon/flow-qa@0.1.2
 flow-qa browser install
 flow-qa ui --demo
 ```

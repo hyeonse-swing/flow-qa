@@ -2,6 +2,30 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## Automated npm releases
+
+A push to `main` publishes only when `package.json` changes to a new plain `X.Y.Z` version. Pull requests and pushes without a version change run verification without publishing. The package and lockfile versions must agree; the version must increase, and registry errors stop the release. Rerunning a successful publication skips the existing immutable npm version.
+
+The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification job, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag and checks the published package with a fresh consumer installation and three real Chromium demo cases. No npm token is stored in GitHub secrets.
+
+For the next release, update the release notes and current installation examples, then bump the version before committing and pushing:
+
+```sh
+npm version patch --no-git-tag-version
+npm run check
+```
+
+Push the version change to `main` and check the **Verify release** workflow. A successful verification job alone does not confirm publication: the publish job and its registry smoke check must also pass. Retry a transient failure by rerunning the same workflow; do not reuse a published version for different package contents.
+
+The npm trusted publisher is configured for GitHub repository `hyeonse-swing/flow-qa`, workflow `ci.yml`, with direct publishing allowed. See [npm's trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/) for account setup.
+
+## 0.1.2
+
+Adds version-gated npm publishing from GitHub Actions and npm links in both README languages. Runtime behavior is unchanged from 0.1.1.
+
+- Package: [`@ihyeon/flow-qa@0.1.2`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.1.2)
+- Verification and publication: [GitHub Actions](https://github.com/hyeonse-swing/flow-qa/actions/workflows/ci.yml)
+
 ## 0.1.1
 
 This release uses plain semver and the npm `latest` dist-tag. It includes the runtime fixes documented in the historical entry below, with no additional runtime changes. The existing runtime passed 47 tests and the browser checks recorded there. Version 0.1.1 metadata, package contents, and a fresh consumer installation were also verified: the installed `flow-qa` command worked and all three Chromium demo cases passed without model calls.
@@ -10,7 +34,7 @@ This release uses plain semver and the npm `latest` dist-tag. It includes the ru
 - Source and package: [GitHub release](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.1.1)
 - Public checks: [GitHub Actions](https://github.com/hyeonse-swing/flow-qa/actions/workflows/ci.yml)
 
-Use this version when checking the published package:
+Use the matching source revision when checking this historical package:
 
 ```sh
 FLOWQA_PACKAGE_SPEC=@ihyeon/flow-qa@0.1.1 npm run smoke:package
