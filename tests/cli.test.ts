@@ -58,6 +58,56 @@ test('CLI saves only generic model metadata and rejects removed provider options
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('doctor reports planner and agent API key readiness without exposing key values', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-doctor-cli-'));
+  const qa = (env: NodeJS.ProcessEnv, ...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir], { env });
+  const plannerKey = 'FLOW_QA_DOCTOR_PLANNER_KEY';
+  const agentKey = 'FLOW_QA_DOCTOR_AGENT_KEY';
+  const sentinel = 'fixture-secret-never-print';
+  const baseEnv: NodeJS.ProcessEnv = { ...process.env, FLOW_QA_LANG: '' };
+  delete baseEnv[plannerKey];
+  delete baseEnv[agentKey];
+  try {
+    await qa(baseEnv, 'init');
+    for (const lang of ['en', 'ko']) {
+      const { stdout } = await qa(baseEnv, 'doctor', '--lang', lang);
+      assert.match(stdout, lang === 'en' ? /Planner model: not configured \(prompt handoff available\)/ : /설계 모델: 미연결 \(프롬프트 전달 가능\)/);
+      assert.match(stdout, lang === 'en' ? /Agent model: not configured \(deterministic tests available\)/ : /실행 모델: 미연결 \(고정 조작 테스트 가능\)/);
+      assert.doesNotMatch(stdout, /API key:|API 키:/);
+    }
+    for (const [role, key] of [['planner', plannerKey], ['agent', agentKey]]) {
+      await qa(baseEnv, 'model', role!, '--url', 'https://model.example/v1', '--model', 'test-model', '--key-env', key!);
+    }
+    for (const [env, enState, koState] of [
+      [{ ...baseEnv, [plannerKey]: sentinel, [agentKey]: sentinel }, 'set', '설정됨'],
+      [baseEnv, 'missing', '누락'],
+      [{ ...baseEnv, [plannerKey]: '', [agentKey]: '' }, 'missing', '누락'],
+    ] as const) {
+      for (const lang of ['en', 'ko']) {
+        const { stdout, stderr } = await qa(env, 'doctor', '--lang', lang);
+        assert.match(stdout, /playwright: [0-9]+\.[0-9]+\.[0-9]+/);
+        assert.match(stdout, lang === 'en' ? /Chromium: (installed|missing)/ : /Chromium: (설치됨|미설치)/);
+        const lines = lang === 'en'
+          ? [`Planner API key: ${plannerKey}: ${enState}`, `Agent API key: ${agentKey}: ${enState}`]
+          : [`설계 모델 API 키: ${plannerKey}: ${koState}`, `실행 모델 API 키: ${agentKey}: ${koState}`];
+        for (const line of lines) assert.ok(stdout.split('\n').includes(line), `Missing doctor line: ${line}`);
+        assert.doesNotMatch(stdout + stderr, /fixture-secret-never-print/);
+      }
+    }
+    for (const role of ['planner', 'agent']) {
+      await qa(baseEnv, 'model', role, '--url', 'https://model.example/v1', '--model', 'test-model');
+    }
+    for (const lang of ['en', 'ko']) {
+      const { stdout } = await qa(baseEnv, 'doctor', '--lang', lang);
+      const lines = lang === 'en'
+        ? ['Planner API key: key environment variable not configured', 'Agent API key: key environment variable not configured']
+        : ['설계 모델 API 키: 키 환경 변수 미지정', '실행 모델 API 키: 키 환경 변수 미지정'];
+      for (const line of lines) assert.ok(stdout.split('\n').includes(line), `Missing doctor line: ${line}`);
+      assert.doesNotMatch(stdout, /fixture-secret-never-print/);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('browser installer uses the installed Playwright CLI and opts into system dependencies explicitly', () => {
   const normal = playwrightInstallInvocation();
   assert.equal(normal.command, process.execPath);

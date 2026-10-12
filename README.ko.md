@@ -16,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24 이상이 필요합니다. 브라우저는 첫 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.2
+npm install -g @ihyeon/flow-qa@0.1.3
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -57,6 +57,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 ```
 
 인증이 필요하면 모델 설정에 `--key-env FLOW_QA_API_KEY`를 추가하고 실행 환경에 그 값을 제공하세요. 설정 파일에는 환경 변수 이름만 저장합니다. 플로우 문서는 지정한 설계 모델 서버로 전송됩니다. 브라우저의 자연어 조작 `act` 또는 모델 판정 `assertAgent`를 쓰려면 도구 호출·이미지 입력을 지원하는 **별도** `agent` 모델 설정이 필요합니다. 고정된 클릭·입력·검증 단계는 모델 없이 실행됩니다.
+
+`flow-qa doctor --workspace my-qa`로 로컬 의존성과 모델 인증용 환경 변수의 설정 여부를 확인할 수 있습니다. 키 값은 출력하지 않고 모델 서버도 호출하지 않습니다. 환경 변수가 있어도 실제 인증 성공을 확인한 것은 아닙니다.
 
 ## 설계 원칙과 결과 해석
 

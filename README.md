@@ -16,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Requires Node.js 24 or later. Install Chromium before the first run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.2
+npm install -g @ihyeon/flow-qa@0.1.3
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -57,6 +57,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 ```
 
 For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command and provide that environment variable to the process. The config stores the variable's name, not its value. The flow is sent to the planner endpoint you chose. Natural-language browser action (`act`) and model judgment (`assertAgent`) require a **separately configured** `agent` model that supports tools and images. Fixed clicks, inputs, and assertions run without a model.
+
+`flow-qa doctor --workspace my-qa` checks local dependencies and whether configured model-key environment variables are present. It does not print key values or call the model server; a present key does not confirm remote authentication.
 
 ## Design choices and result interpretation
 

@@ -2,11 +2,11 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
-## Automated npm releases
+## Automated npm and GitHub releases
 
 A push to `main` publishes only when `package.json` changes to a new plain `X.Y.Z` version. Pull requests and pushes without a version change run verification without publishing. The package and lockfile versions must agree; the version must increase, and registry errors stop the release. Rerunning a successful publication skips the existing immutable npm version.
 
-The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification job, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag and checks the published package with a fresh consumer installation and three real Chromium demo cases. No npm token is stored in GitHub secrets.
+The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification matrix on Ubuntu and macOS, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag, requires the registry's `gitHead` to match the workflow commit, and checks the published package with a fresh consumer installation and three real Chromium demo cases. The commit check also applies when retrying an already published version. No npm token is stored in GitHub secrets. After the published package passes its consumer smoke check, a separate job creates the matching GitHub tag and release at the exact verified commit. It preserves existing releases and rejects a tag pointing to another commit. Rerunning an older release does not replace a newer latest release.
 
 For the next release, update the release notes and current installation examples, then bump the version before committing and pushing:
 
@@ -15,9 +15,19 @@ npm version patch --no-git-tag-version
 npm run check
 ```
 
-Push the version change to `main` and check the **Verify release** workflow. A successful verification job alone does not confirm publication: the publish job and its registry smoke check must also pass. Retry a transient failure by rerunning the same workflow; do not reuse a published version for different package contents.
+Push the version change to `main` and check the **Verify release** workflow. A successful verification job alone does not confirm publication: the publish job and its registry smoke check must also pass. GitHub release completion is reported by the separate release job. Retry a transient failure by rerunning the same workflow; do not reuse a published version for different package contents.
 
 The npm trusted publisher is configured for GitHub repository `hyeonse-swing/flow-qa`, workflow `ci.yml`, with direct publishing allowed. See [npm's trusted publishing documentation](https://docs.npmjs.com/trusted-publishers/) for account setup.
+
+## 0.1.3
+
+- `doctor` reports whether each configured planner or agent key environment variable is present, missing, or not configured. English and Korean diagnostics show no credential values and make no model requests. The command remains informational.
+- CLI target and model configuration updates write a private temporary file, synchronize it, and replace the configuration only after the new JSON is complete. Existing initialization and exclusive case-file creation behavior are preserved. This protects against partially written configuration during process interruption; it does not serialize concurrent CLI updates or guarantee rename durability after power loss.
+- CI runs the existing test, browser, UI, and package-install checks on Ubuntu and macOS before publishing. Successful npm publication and its consumer smoke check now also create the corresponding GitHub release.
+
+- Package: [`@ihyeon/flow-qa@0.1.3`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.1.3)
+- Release: [GitHub 0.1.3](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.1.3)
+- Verification: [GitHub Actions](https://github.com/hyeonse-swing/flow-qa/actions/workflows/ci.yml)
 
 ## 0.1.2
 

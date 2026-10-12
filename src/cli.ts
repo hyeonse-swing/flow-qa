@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { localeFromEnv, localized, localizeProductMessage, type Locale } from './i18n.ts';
 import { configSchema, idSchema, modelSchema, targetSchema } from './schema.ts';
-import { CONFIG_FILE, initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, writeJSON } from './workspace.ts';
+import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, writeConfig, writeJSON } from './workspace.ts';
 import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
 import { runSuite } from './engine.ts';
@@ -150,7 +150,7 @@ export async function main(args: string[]): Promise<void> {
       const config = await readConfig(workspace);
       const name = idSchema.parse(required(arg, localized(locale, 'Target name', '대상 이름'), locale));
       config.targets[name] = targetSchema.parse({ url: required(values.url, '--url', locale) });
-      await writeJSON(resolve(workspace, CONFIG_FILE), config);
+      await writeConfig(workspace, config);
       console.log(localized(locale, `Target ${name} connected: ${config.targets[name]!.url}`, `대상 ${name} 연결: ${config.targets[name]!.url}`)); return;
     }
     if (command === 'model') {
@@ -158,7 +158,7 @@ export async function main(args: string[]): Promise<void> {
       const config = await readConfig(workspace);
       const base = { baseURL: required(values.url, '--url', locale), model: required(values.model, '--model', locale), ...(values['key-env'] ? { apiKeyEnv: values['key-env'] } : {}) };
       config[arg] = modelSchema.parse(base);
-      await writeJSON(resolve(workspace, CONFIG_FILE), config);
+      await writeConfig(workspace, config);
       console.log(localized(locale, `${arg} model connection saved. No model call has been made. API key values are not saved in the configuration file.`, `${arg} 모델 연결 설정 저장. 실제 호출 전입니다. API 키 값은 설정 파일에 저장하지 않습니다.`)); return;
     }
     if (command === 'plan') {
@@ -228,11 +228,17 @@ export async function main(args: string[]): Promise<void> {
     }
     if (command === 'doctor') {
       const config = configSchema.parse(await readConfig(workspace));
+      const keyStatus = (apiKeyEnv: string | undefined) => !apiKeyEnv
+        ? localized(locale, 'key environment variable not configured', '키 환경 변수 미지정')
+        : localized(locale, `${apiKeyEnv}: ${process.env[apiKeyEnv] ? 'set' : 'missing'}`, `${apiKeyEnv}: ${process.env[apiKeyEnv] ? '설정됨' : '누락'}`);
       for (const pkg of ['e2e', '@e2e-dev/web', 'playwright']) {
         console.log(`${pkg}: ${await installedVersion(pkg, locale)}`);
       }
       const hasChromium = await chromiumInstalled();
-      console.log(localized(locale, `Node: ${process.version}\nChromium: ${hasChromium ? 'installed' : 'missing (flow-qa browser install)'}\nTargets: ${Object.keys(config.targets).join(', ') || 'none'}\nPlanner model: ${config.planner ? 'configured' : 'not configured (prompt handoff available)'}\nAgent model: ${config.agent ? 'configured' : 'not configured (deterministic tests available)'}`, `Node: ${process.version}\nChromium: ${hasChromium ? '설치됨' : '미설치 (flow-qa browser install)'}\n대상: ${Object.keys(config.targets).join(', ') || '없음'}\n설계 모델: ${config.planner ? '연결 설정됨' : '미연결 (프롬프트 전달 가능)'}\n실행 모델: ${config.agent ? '연결 설정됨' : '미연결 (고정 조작 테스트 가능)'}`)); return;
+      console.log(localized(locale, `Node: ${process.version}\nChromium: ${hasChromium ? 'installed' : 'missing (flow-qa browser install)'}\nTargets: ${Object.keys(config.targets).join(', ') || 'none'}\nPlanner model: ${config.planner ? 'configured' : 'not configured (prompt handoff available)'}\nAgent model: ${config.agent ? 'configured' : 'not configured (deterministic tests available)'}`, `Node: ${process.version}\nChromium: ${hasChromium ? '설치됨' : '미설치 (flow-qa browser install)'}\n대상: ${Object.keys(config.targets).join(', ') || '없음'}\n설계 모델: ${config.planner ? '연결 설정됨' : '미연결 (프롬프트 전달 가능)'}\n실행 모델: ${config.agent ? '연결 설정됨' : '미연결 (고정 조작 테스트 가능)'}`));
+      if (config.planner) console.log(localized(locale, `Planner API key: ${keyStatus(config.planner.apiKeyEnv)}`, `설계 모델 API 키: ${keyStatus(config.planner.apiKeyEnv)}`));
+      if (config.agent) console.log(localized(locale, `Agent API key: ${keyStatus(config.agent.apiKeyEnv)}`, `실행 모델 API 키: ${keyStatus(config.agent.apiKeyEnv)}`));
+      return;
     }
     throw new Error(localized(locale, `Unknown command: ${command}`, `알 수 없는 명령: ${command}`));
   } catch (error) {

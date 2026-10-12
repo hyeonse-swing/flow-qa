@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-const { registryVersion, registryConfirmed, releaseDecision, validateManifest } = await import(new URL('../scripts/npm-release.mjs', import.meta.url).href);
+const { registryMetadata, registryVersion, registryConfirmed, registryConfirmedForCommit, releaseDecision, validateManifest } = await import(new URL('../scripts/npm-release.mjs', import.meta.url).href);
 
 const manifest = (version: string) => ({ name: '@ihyeon/flow-qa', version });
 const lock = (version: string) => ({ ...manifest(version), packages: { '': manifest(version) } });
+const publishingSha = 'e9fa6389d551f1dcb8111b2270d8a855c6208c20';
 
 test('release requires matching package and lock metadata', () => {
   assert.equal(validateManifest(manifest('0.1.2'), lock('0.1.2')), '0.1.2');
@@ -32,8 +33,33 @@ test('registry treats only an exact 404 as unpublished', async () => {
   await assert.rejects(registryVersion('0.1.2', false, async () => ({ ok: true, status: 200, json: async () => manifest('0.1.1') })), /invalid package metadata/);
 });
 
+test('exact-version registry metadata retains the published source SHA', async () => {
+  const metadata = { ...manifest('0.1.2'), gitHead: publishingSha };
+  assert.deepEqual(await registryMetadata('0.1.2', false, async () => ({
+    ok: true, status: 200, json: async () => metadata,
+  })), metadata);
+  await assert.rejects(registryMetadata('0.1.2', false, async () => ({
+    ok: true, status: 200, json: async () => manifest('0.1.1'),
+  })), /invalid package metadata/);
+});
+
 test('published rerun confirms its exact version even after latest advances', () => {
   assert.equal(registryConfirmed('0.1.2', '0.1.2', '0.1.3', false), true);
   assert.equal(registryConfirmed('0.1.2', '0.1.2', '0.1.3', true), false);
   assert.equal(registryConfirmed('0.1.2', null, '0.1.3', false), false);
+  const metadata = { ...manifest('0.1.2'), gitHead: publishingSha };
+  assert.equal(registryConfirmedForCommit('0.1.2', metadata, '0.1.3', false, publishingSha), true);
+  assert.equal(registryConfirmedForCommit('0.1.2', metadata, '0.1.3', true, publishingSha), false);
+  assert.equal(registryConfirmedForCommit('0.1.2', metadata, '0.1.2', true, publishingSha.toUpperCase()), true);
+});
+
+test('registry confirmation fails closed when gitHead is missing, invalid, or different', () => {
+  const metadata = manifest('0.1.2');
+  assert.throws(() => registryConfirmedForCommit('0.1.2', metadata, '0.1.2', true, publishingSha), /valid gitHead/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: 'not-a-sha' }, '0.1.2', true, publishingSha), /valid gitHead/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: 123 }, '0.1.2', true, publishingSha), /valid gitHead/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: '0'.repeat(40) }, '0.1.2', true, publishingSha), /valid gitHead/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: 'a'.repeat(40) }, '0.1.2', true, publishingSha), /does not match GITHUB_SHA/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: publishingSha }, '0.1.2', true, 'bad-sha'), /GITHUB_SHA must/);
+  assert.throws(() => registryConfirmedForCommit('0.1.2', { ...metadata, gitHead: publishingSha }, '0.1.2', true, '0'.repeat(40)), /GITHUB_SHA must/);
 });

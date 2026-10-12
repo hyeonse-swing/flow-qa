@@ -12,8 +12,12 @@ concurrency:
   queue: max
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -30,7 +34,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: release-verification
+          name: release-verification-${{ matrix.os }}
           path: |
             output/package/*.json
             output/playwright/i18n/result.json
@@ -41,6 +45,9 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_candidate: ${{ steps.release.outputs.release_candidate }}
     permissions:
       contents: read
       id-token: write
@@ -79,3 +86,24 @@ jobs:
         run: |
           npm run qa -- browser install --with-deps
           npm run smoke:package
+  github_release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.publish.outputs.release_candidate == 'true'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Create matching GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLOWQA_RELEASE_VERSION: ${{ needs.publish.outputs.version }}
+          FLOWQA_RELEASE_CANDIDATE: ${{ needs.publish.outputs.release_candidate }}
+        run: node scripts/github-release.mjs

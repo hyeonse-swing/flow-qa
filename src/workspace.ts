@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { configSchema, suiteSchema, type Config, type Suite } from './schema.ts';
 
 export const CONFIG_FILE = 'flowqa.config.json';
@@ -17,6 +17,41 @@ export async function readSuite(path: string): Promise<Suite> {
 export async function writeJSON(path: string, data: unknown, exclusive = false): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(data, null, 2)}\n`, { flag: exclusive ? 'wx' : 'w', mode: 0o600 });
+}
+export async function writeConfig(workspace: string, config: Config): Promise<void> {
+  const content = `${JSON.stringify(configSchema.parse(config), null, 2)}\n`;
+  const alias = resolve(workspace, CONFIG_FILE);
+  let file: string;
+  try { file = await realpath(alias); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    try {
+      if ((await lstat(alias)).isSymbolicLink()) throw new Error('Configuration symlink target does not exist.');
+    } catch (inspectError) {
+      if ((inspectError as NodeJS.ErrnoException).code !== 'ENOENT') throw inspectError;
+    }
+    file = alias;
+  }
+  await mkdir(dirname(file), { recursive: true });
+  const temp = resolve(dirname(file), `.flowqa-config-${randomUUID()}.tmp`);
+  let created = false;
+  try {
+    const handle = await open(temp, 'wx', 0o600);
+    created = true;
+    try {
+      await handle.writeFile(content, 'utf8');
+      await handle.sync();
+    } finally { await handle.close(); }
+    await rename(temp, file);
+  } catch (error) {
+    if (created) {
+      try { await unlink(temp); }
+      catch (cleanupError) {
+        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') throw new AggregateError([error, cleanupError], 'Could not save configuration or clean up its temporary file.');
+      }
+    }
+    throw error;
+  }
 }
 export function sha256(text: string): string { return createHash('sha256').update(text).digest('hex'); }
 
