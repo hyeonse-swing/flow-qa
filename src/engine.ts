@@ -5,8 +5,10 @@ import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileSuite } from './compiler.ts';
+import { acquireMobileDevice, mobileReadiness, type ListMobileDevices } from './mobile-runtime.ts';
 import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type QAReport } from './report.ts';
 import { configSchema, suiteSchema, type Config, type Suite } from './schema.ts';
+import { reportTarget, targetKind, type ReportTarget } from './targets.ts';
 import { verifySuiteSource } from './workspace.ts';
 
 export interface RunSuiteOptions {
@@ -15,12 +17,16 @@ export interface RunSuiteOptions {
   config: Config;
   targetName: string;
   signal?: AbortSignal;
+  /** @internal A read-only inventory seam for device-free tests. */
+  listMobileDevices?: ListMobileDevices;
 }
 
 export interface RunSuiteResult { runDir: string; report: QAReport }
 
 const TEST_FILE = 'suite.e2e.ts';
 const CONFIG_FILE = 'e2e.config.ts';
+
+class BlockedRun extends Error {}
 
 function agentCase(testCase: Suite['cases'][number]): boolean {
   return testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent');
@@ -34,15 +40,21 @@ function compiledTest(suite: Suite): string {
   const source = compileSuite(suite);
   return source
     .replace("from '@e2e-dev/web'", `from ${JSON.stringify(packageModule('@e2e-dev/web'))}`)
+    .replace("from '@e2e-dev/mobile'", `from ${JSON.stringify(packageModule('@e2e-dev/mobile'))}`)
     .replace("from 'e2e'", `from ${JSON.stringify(packageModule('e2e'))}`);
 }
 
-function generatedConfig(suite: Suite, config: Config, targetName: string, agentAvailable: boolean): string {
+function generatedConfig(suite: Suite, config: Config, targetName: string, agentAvailable: boolean, runId: string, sdkDevice?: string): string {
   const target = config.targets[targetName];
   if (!target) throw new Error(`Target not found: ${targetName}`);
-  const lines = [
-    `import { web } from ${JSON.stringify(packageModule('@e2e-dev/web'))};`,
-  ];
+  const mobile = target.kind === 'mobile';
+  const lines = mobile
+    ? [`import { mobile } from ${JSON.stringify(packageModule('@e2e-dev/mobile'))};`]
+    : [`import { web } from ${JSON.stringify(packageModule('@e2e-dev/web'))};`];
+  if (mobile) {
+    if (agentAvailable) lines.push(`import { mobileTools } from ${JSON.stringify(packageModule('@e2e-dev/mobile/tools'))};`);
+    lines.push(`const engine = mobile({ platform: ${JSON.stringify(target.platform)}, device: ${JSON.stringify(sdkDevice ?? target.device)}, session: ${JSON.stringify(runId)} });`);
+  }
   if (agentAvailable) lines.push(`import { createOpenAICompatible } from ${JSON.stringify(packageModule('@ai-sdk/openai-compatible'))};`);
   const agent = config.agent;
   const agents = agentAvailable && agent ? `,
@@ -51,10 +63,13 @@ function generatedConfig(suite: Suite, config: Config, targetName: string, agent
     baseURL: ${JSON.stringify(agent.baseURL)},
     fetch: (input, init) => fetch(input, { ...init, redirect: 'error' }),
     ${agent.apiKeyEnv ? `apiKey: process.env[${JSON.stringify(agent.apiKeyEnv)}],` : ''}
-  }).chatModel(${JSON.stringify(agent.model)}) } }` : '';
+  }).chatModel(${JSON.stringify(agent.model)})${mobile ? ', tools: mobileTools(engine)' : ''} } }` : '';
+  const targetConfig = mobile
+    ? `{ name: ${JSON.stringify(targetName)}, engine, app: { bundleId: ${JSON.stringify(target.bundleId)} } }`
+    : `{ name: ${JSON.stringify(targetName)}, engine: web(), app: { url: ${JSON.stringify(target.url)} } }`;
   lines.push(`export default {
   projectId: ${JSON.stringify(suite.id)},
-  targets: [{ name: ${JSON.stringify(targetName)}, engine: web(), app: { url: ${JSON.stringify(target.url)} } }],
+  targets: [${targetConfig}],
   tests: [${JSON.stringify(TEST_FILE)}],
   output: 'raw',
   reporters: ['list'],
@@ -167,23 +182,50 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
   await writeFile(path.join(runDir, 'suite.sha256'), `${suiteHash}\n`, { mode: 0o600 });
   let report: QAReport;
   let blocked = new Map<string, string>();
-  let target = { name: options.targetName, url: options.config?.targets?.[options.targetName]?.url ?? '' };
+  let target: ReportTarget = { name: options.targetName, url: '' };
+  let releaseMobileDevice: (() => void) | undefined;
   const context = () => ({ suite: options.suite, runId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
+  const blockAll = (suite: Suite, reason: string): never => {
+    for (const testCase of suite.cases) if (!blocked.has(testCase.id)) blocked.set(testCase.id, reason);
+    throw new BlockedRun(reason);
+  };
   try {
     const suite = suiteSchema.parse(options.suite);
     await verifySuiteSource(suite, workspace);
+    const rawTarget = options.config?.targets?.[options.targetName] as unknown;
+    if (rawTarget && typeof rawTarget === 'object' && !Array.isArray(rawTarget)) {
+      const raw = rawTarget as Record<string, unknown>;
+      if (raw.kind === 'mobile' && (typeof raw.device !== 'string' || !raw.device.trim())) {
+        if ((raw.platform === 'ios' || raw.platform === 'android') && typeof raw.bundleId === 'string') {
+          target = { name: options.targetName, kind: 'mobile', platform: raw.platform, bundleId: raw.bundleId, device: '' };
+        }
+        blocked = blockedCases(suite, options.config);
+        blockAll(suite, 'A mobile target requires an explicit device.');
+      }
+    }
     const config = configSchema.parse(options.config);
     const selectedTarget = config.targets[options.targetName];
     if (!selectedTarget) throw new Error(`Target not found: ${options.targetName}`);
-    target = { name: options.targetName, url: selectedTarget.url };
+    target = reportTarget(options.targetName, selectedTarget);
     blocked = blockedCases(suite, config);
+    if ((suite.platform ?? 'web') !== targetKind(selectedTarget)) blockAll(suite, 'The suite platform does not match the selected target.');
     const runnable = suite.cases.filter((testCase) => !blocked.has(testCase.id));
+    let sdkDevice: string | undefined;
+    if (selectedTarget.kind === 'mobile' && runnable.length > 0 && !options.signal?.aborted) {
+      const readiness = await mobileReadiness(selectedTarget, options.listMobileDevices);
+      if (!readiness.ready) blockAll(suite, readiness.reason);
+      else {
+        sdkDevice = readiness.sdkDevice;
+        releaseMobileDevice = acquireMobileDevice(selectedTarget.platform, readiness.deviceId);
+      }
+      if (!releaseMobileDevice) blockAll(suite, 'Selected mobile device is in use.');
+    }
     const executable = runnableSuite(suite, blocked);
     const testFile = path.join(runDir, TEST_FILE);
     const configFile = path.join(runDir, CONFIG_FILE);
     const agentAvailable = runnable.some(agentCase);
     await writeFile(testFile, compiledTest(executable), { mode: 0o600 });
-    await writeFile(configFile, generatedConfig(suite, config, options.targetName, agentAvailable), { mode: 0o600 });
+    await writeFile(configFile, generatedConfig(suite, config, options.targetName, agentAvailable, runId, sdkDevice), { mode: 0o600 });
     if (options.signal?.aborted) {
       report = failureReport(context(), 'interrupted', 'An interrupt signal arrived before the run started.');
     } else if (runnable.length === 0) {
@@ -223,7 +265,11 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
       }
     }
   } catch (error) {
-    report = failureReport(context(), options.signal?.aborted ? 'interrupted' : 'error', error instanceof Error ? error.message : String(error));
+    const status = options.signal?.aborted ? 'interrupted' : error instanceof BlockedRun ? 'blocked' : 'error';
+    report = failureReport(context(), status, error instanceof Error ? error.message : String(error));
+    if (status === 'blocked') report.errors = [];
+  } finally {
+    releaseMobileDevice?.();
   }
   await writeFile(path.join(runDir, 'qa-report.json'), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   await writeFile(path.join(runDir, 'qa-report.md'), renderMarkdown(report), { mode: 0o600 });

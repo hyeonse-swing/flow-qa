@@ -15,6 +15,9 @@ function locatorCode(locator: Locator): string {
 function stepCode(step: Step): string {
   switch (step.type) {
     case 'open': return `await app.open(${literal(step.path)});`;
+    case 'launchApp': return 'await app.open();';
+    case 'back': return 'await app.back();';
+    case 'swipe': return `await screen.swipe({ direction: ${literal(step.direction)} });`;
     case 'act': return `await agent.act(${literal(step.instruction)});`;
     case 'click': return `await ${locatorCode(step.locator)}.tap();`;
     case 'fill': return `await ${locatorCode(step.locator)}.fill(${literal(step.value)});`;
@@ -43,7 +46,8 @@ export function needsAgent(suite: Suite): boolean {
 
 export function compileSuite(suite: Suite): string {
   const parsed = suiteSchema.parse(suite);
-  const lines = ["import { test } from '@e2e-dev/web';", "import { expect } from 'e2e';", ''];
+  const mobile = parsed.platform === 'mobile';
+  const lines = [`import { test } from '${mobile ? '@e2e-dev/mobile' : '@e2e-dev/web'}';`, "import { expect } from 'e2e';", ''];
   for (const testCase of parsed.cases) {
     const title = literal(`[${testCase.id}] ${testCase.title}`);
     if (testCase.questions.length) {
@@ -51,11 +55,13 @@ export function compileSuite(suite: Suite): string {
       continue;
     }
     const fixtures = ['app'];
-    if (testCase.steps.some((step) => 'locator' in step)) fixtures.push('screen');
+    if (testCase.steps.some((step) => 'locator' in step || step.type === 'swipe')) fixtures.push('screen');
     if (testCase.steps.some((step) => step.type === 'assertUrl')) fixtures.push('browser');
     if (testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent')) fixtures.push('agent');
     lines.push(`test(${title}, async ({ ${fixtures.join(', ')} }) => {`);
-    if (testCase.steps[0]?.type !== 'open') lines.push("  await app.open('/');");
+    if (mobile) {
+      if (testCase.steps[0]?.type !== 'launchApp') lines.push('  await app.open();');
+    } else if (testCase.steps[0]?.type !== 'open') lines.push("  await app.open('/');");
     for (const step of testCase.steps) lines.push(`  ${stepCode(step)}`);
     lines.push('});');
   }

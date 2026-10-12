@@ -13,10 +13,10 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 
 ## Try the local demo
 
-Requires Node.js 24 or later. Install Chromium before the first run:
+Node.js 24.8 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.3
+npm install -g @ihyeon/flow-qa@0.2.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -60,6 +60,12 @@ For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command a
 
 `flow-qa doctor --workspace my-qa` checks local dependencies and whether configured model-key environment variables are present. It does not print key values or call the model server; a present key does not confirm remote authentication.
 
+## Mobile targets
+
+Version `0.2.0` adds user-configured iOS and Android targets. Choose **Mobile** in the scenario screen to prepare cases before choosing an app. Later, register the platform, installed app's bundle/package ID, and device in **Connections**, then select that target for execution. Saving settings does not install an app or start a test.
+
+The CLI equivalents are `plan flow.md --platform mobile --prompt-only` and `connect my-ios --platform ios --bundle-id com.example.app --device "QA iPhone"`; replace the example app and device with your own. Existing web targets and suites remain supported. See the [mobile guide](docs/mobile.md) for setup, native steps, and verification limits.
+
 ## Design choices and result interpretation
 
 - Every case references requirement IDs and a runnable case needs an explicit assertion. The schema accepts a fixed vocabulary including `open`, `click`, `fill`, `act`, `assertVisible`, `assertText`, `assertUrl`, and `assertAgent`. It never executes arbitrary JavaScript or shell commands returned by a model.
@@ -68,7 +74,7 @@ For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command a
 - Each run gets a fresh `.flowqa/runs/<run-id>/` directory with engine output and `qa-report.json`/`qa-report.md`. Reports distinguish passed, failed, passed after retry, blocked, error, and skipped cases. A failed assertion is an observation, not proof of a product defect.
 - Cancellation records an interrupted run. Canceling generation prevents a late response from changing the draft, but does not guarantee cancellation of a provider's processing or charges. The UI shows token use and estimated cost only when the engine supplies them; there is no overall cost cap.
 
-Reports and raw evidence can contain data from the tested app. `.flowqa/` is Git-ignored, but inspect files before sharing them. Redaction cannot be assumed to catch every personal detail. Session setup, mobile devices, scheduled CI runs, team permissions, and a shared server are outside the current scope.
+Reports and raw evidence can contain data from the tested app. `.flowqa/` is Git-ignored, but inspect files before sharing them. Redaction cannot be assumed to catch every personal detail. Session setup, automatic mobile SDK/device/app provisioning, scheduled CI runs, team permissions, and a shared server are outside the current scope.
 
 ![QA report from three real passing cases](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 

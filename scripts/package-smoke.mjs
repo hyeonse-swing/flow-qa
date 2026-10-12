@@ -50,8 +50,25 @@ try {
   cli('init', 'workspace');
   const doctor = cli('doctor', '--workspace', 'workspace');
   assert.match(doctor, /e2e/);
+  assert.match(doctor, /@e2e-dev\/mobile: 0\./);
   assert.match(cli('browser', 'install', '--help'), /browser install/);
   cli('validate', 'cases/task-flow.json', '--workspace', 'workspace');
+  // Installed consumers can author mobile cases before any app or device is configured.
+  cli('plan', 'flows/task-flow.md', '--platform', 'mobile', '--prompt-only', '--workspace', 'workspace');
+  const mobileSuite = {
+    schemaVersion: 'flow-qa/suite-1', platform: 'mobile', id: 'mobile-smoke', title: 'Mobile package smoke',
+    requirements: [{ id: 'REQ-1', text: 'The installed app opens to its home screen.' }],
+    cases: [{ id: 'CASE-1', title: 'Home screen', requirementIds: ['REQ-1'], steps: [
+      { type: 'launchApp' }, { type: 'assertVisible', locator: { by: 'text', value: 'Home' } },
+    ] }],
+  };
+  await writeFile(path.join(consumer, 'workspace', 'cases', 'mobile-smoke.json'), JSON.stringify(mobileSuite));
+  cli('validate', 'cases/mobile-smoke.json', '--workspace', 'workspace');
+  cli('generate', 'cases/mobile-smoke.json', '--out', 'generated/mobile-smoke.test.ts', '--workspace', 'workspace');
+  assert.match(await readFile(path.join(consumer, 'workspace', 'generated', 'mobile-smoke.test.ts'), 'utf8'), /@e2e-dev\/mobile/);
+  cli('connect', 'my-ios', '--platform', 'ios', '--bundle-id', 'com.example.app', '--device', 'QA iPhone', '--workspace', 'workspace');
+  cli('connect', 'my-android', '--platform', 'android', '--bundle-id', 'com.example.app', '--device', 'emulator-5554', '--workspace', 'workspace');
+  assert.match(cli('doctor', '--workspace', 'workspace'), /Mobile target my-android:/);
   child = spawn(process.execPath, [bin, 'ui', '--demo', '--port', '0'], { cwd: consumer, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = ''; let errors = '';
   child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { errors += chunk; });

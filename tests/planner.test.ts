@@ -101,3 +101,36 @@ test('planner rejects former provider metadata before making a request', async (
     usageContext: { team: 'dev-fe', service: 'test-fixture', env: 'dev', feature: 'planning' } } as unknown as PlannerConnection;
   await assert.rejects(planFlow('flow', formerProvider));
 });
+
+test('mobile planning works before any app or device is configured', async () => {
+  const mobile: Suite = { ...suite, platform: 'mobile', cases: [{ ...suite.cases[0]!, steps: [
+    { type: 'launchApp' }, { type: 'assertVisible', locator: { by: 'text', value: 'Ready' }, visible: true },
+  ] }] };
+  const prompt = buildPlanningPrompt('The app shows Ready after launch.', 'mobile');
+  assert.match(prompt, /platform: "mobile"/);
+  assert.match(prompt, /"type": "launchApp"/);
+  assert.match(prompt, /Never use web open paths or assertUrl/);
+  assert.match(prompt, /runtime target is configured separately after planning/);
+  globalThis.fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body));
+    assert.match(request.messages[1].content, /platform: "mobile"/);
+    return Response.json({ choices: [{ message: { content: JSON.stringify(mobile) } }] });
+  };
+  assert.deepEqual(await planFlow('The app shows Ready after launch.', { baseURL: 'https://model.example/v1', model: 'test' }, { platform: 'mobile' }), mobile);
+});
+
+test('planner rejects a response for a different platform instead of relabelling it', async () => {
+  const model = { baseURL: 'https://model.example/v1', model: 'test' };
+  globalThis.fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(suite) } }] });
+  await assert.rejects(planFlow('Native app', model, { platform: 'mobile' }), (error: unknown) => {
+    assert.ok(error instanceof PlannerError);
+    assert.equal(error.code, 'invalid-suite');
+    assert.equal(error.issues?.[0]?.path, 'platform');
+    return true;
+  });
+  const mobile: Suite = { ...suite, platform: 'mobile', cases: [{ ...suite.cases[0]!, steps: [
+    { type: 'assertVisible', locator: { by: 'text', value: 'Ready' }, visible: true },
+  ] }] };
+  globalThis.fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(mobile) } }] });
+  await assert.rejects(planFlow('Web page', model), /invalid suite/);
+});

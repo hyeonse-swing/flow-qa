@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { PlannerError } from '../src/planner.ts';
 import { failureReport, renderMarkdown } from '../src/report.ts';
+import { targetFingerprint } from '../src/targets.ts';
 import type { Config, Suite } from '../src/schema.ts';
 import { startUIServer, type UIServerHandle } from '../src/ui/server.ts';
 import { initWorkspace, readConfig, readSuite } from '../src/workspace.ts';
@@ -41,7 +42,7 @@ async function statusWithHost(url: string, host: string): Promise<number | undef
 async function state(server: UIServerHandle) {
   return (await (await fetch(`${server.url}/api/state`)).json()) as {
     csrfToken: string; suites: { file: string; id: string; caseCount: number }[];
-    targets: { name: string; url: string; description: string }[];
+    targets: { name: string; url?: string; kind?: 'mobile'; platform?: 'ios' | 'android'; bundleId?: string; device?: string; description: string; targetFingerprint: string }[];
     runs: { runId: string; status: string; caseCount: number; passedCount: number }[];
     active: { id: string; kind: 'plan' | 'run'; status: string } | null;
     models: { planner: { configured: boolean; kind: string; keyReady: boolean }; agent: { configured: boolean; kind: string; keyReady: boolean } };
@@ -218,7 +219,8 @@ test('settings validate schemas, persist on restart and never return API key val
     const stateText = await stateResponse.text();
     assert.equal(stateText.includes('private-do-not-return'), false);
     assert.equal(JSON.parse(stateText).models.planner.keyReady, true);
-    assert.equal((await readConfig(app.workspace)).targets.site?.url, 'https://example.com');
+    const site = (await readConfig(app.workspace)).targets.site;
+    assert.equal(site && 'url' in site ? site.url : undefined, 'https://example.com');
     await app.server.close();
     const restarted = await startUIServer({ workspace: app.workspace, port: 0 });
     try {
@@ -252,6 +254,58 @@ test('prompt and configured planner use injected adapter without trusting model 
     assert.equal(result.suite.source, undefined);
     assert.match(result.script, /test\(/);
     assert.equal(calls, 1);
+  } finally { await app.close(); }
+});
+
+test('mobile cases can be authored before a target and the selected platform reaches the planner', async () => {
+  const seen: string[] = [];
+  const app = await fixture({ workspace: '', plan: async (_flow, _model, options) => {
+    seen.push(options?.platform ?? 'web');
+    const base = await readSuite(path.join(app.workspace, 'cases', 'task-flow.json'));
+    return { ...base, platform: 'mobile', cases: base.cases.map((item) => ({ ...item, steps: [
+      { type: 'launchApp' as const }, { type: 'assertVisible' as const, locator: { by: 'text' as const, value: 'Ready' }, visible: true },
+    ] })) };
+  } });
+  try {
+    assert.equal((await state(app.server)).targets.some((target) => target.kind === 'mobile'), false);
+    const prompt = await post(app.server, app.token, '/api/prompt', { flow: 'Open the app', platform: 'mobile' });
+    assert.equal(prompt.status, 200);
+    assert.match((await prompt.json() as { prompt: string }).prompt, /mobile/i);
+    assert.equal((await post(app.server, app.token, '/api/models', { role: 'planner', baseURL: 'https://example.com/v1', model: 'test' })).status, 200);
+    const planned = await post(app.server, app.token, '/api/plan', { flow: 'Open the app', platform: 'mobile' });
+    assert.equal(planned.status, 200);
+    const result = await planned.json() as { suite: Suite; script: string };
+    assert.equal(result.suite.platform, 'mobile');
+    assert.match(result.script, /app\.open\(\)/);
+    assert.deepEqual(seen, ['mobile']);
+    assert.equal((await post(app.server, app.token, '/api/compile', { suite: result.suite })).status, 200);
+  } finally { await app.close(); }
+});
+
+test('native targets persist without device action and changed identity invalidates reviewed runs', async () => {
+  let runs = 0;
+  const app = await fixture({ workspace: '', run: async () => { runs += 1; throw new Error('No device action should occur in this test.'); } });
+  try {
+    const original = { name: 'personal-app', kind: 'mobile' as const, platform: 'ios' as const, bundleId: 'org.example.app', device: 'Test iPhone' };
+    assert.equal((await post(app.server, app.token, '/api/targets', original)).status, 200);
+    assert.equal(runs, 0);
+    const first = (await state(app.server)).targets.find((target) => target.name === original.name)!;
+    assert.equal(first.targetFingerprint, targetFingerprint(original));
+    assert.equal(first.bundleId, original.bundleId);
+    assert.equal((await readConfig(app.workspace)).targets[original.name]?.kind, 'mobile');
+    const base = await readSuite(path.join(app.workspace, 'cases', 'task-flow.json'));
+    const mobile = { ...base, platform: 'mobile', cases: base.cases.map((item) => ({ ...item, steps: [
+      { type: 'launchApp' as const }, { type: 'assertVisible' as const, locator: { by: 'text' as const, value: 'Ready' }, visible: true },
+    ] })) };
+    const saved = await post(app.server, app.token, '/api/save', { suite: mobile });
+    assert.equal(saved.status, 200);
+    const file = (await saved.json() as { file: string }).file;
+    const suiteHash = await reviewedSuiteHash(app.server, file);
+    assert.equal((await post(app.server, app.token, '/api/run', { suite: file, suiteHash, targetName: original.name, targetURL: 'https://example.com' })).status, 409);
+    assert.equal((await post(app.server, app.token, '/api/run', { suite: file, suiteHash, targetName: 'demo', targetFingerprint: first.targetFingerprint })).status, 409);
+    assert.equal((await post(app.server, app.token, '/api/targets', { ...original, device: 'Other iPhone' })).status, 200);
+    assert.equal((await post(app.server, app.token, '/api/run', { suite: file, suiteHash, targetName: original.name, targetFingerprint: first.targetFingerprint })).status, 409);
+    assert.equal(runs, 0);
   } finally { await app.close(); }
 });
 
@@ -367,7 +421,7 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
     const runId = randomUUID();
     const runDir = path.join(workspace, '.flowqa', 'runs', runId);
     await mkdir(runDir, { recursive: true });
-    const report = failureReport({ suite, runId, suiteHash: 'hash', target: { name: targetName, url: config.targets[targetName]!.url },
+    const report = failureReport({ suite, runId, suiteHash: 'hash', target: { name: targetName, url: 'url' in config.targets[targetName]! ? config.targets[targetName]!.url : '' },
       startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), blockedReasons: new Map() }, 'interrupted', 'Stopped');
     await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(report));
     await writeFile(path.join(runDir, 'qa-report.md'), renderMarkdown(report));
@@ -476,7 +530,7 @@ test('close aborts a running operation', async () => {
   let aborted = false;
   const app = await fixture({ workspace: '', run: async ({ suite, config, targetName, signal }) => {
     await new Promise<void>((resolve) => signal?.addEventListener('abort', () => { aborted = true; resolve(); }, { once: true }));
-    const report = failureReport({ suite, runId: randomUUID(), suiteHash: 'hash', target: { name: targetName, url: config.targets[targetName]!.url },
+    const report = failureReport({ suite, runId: randomUUID(), suiteHash: 'hash', target: { name: targetName, url: 'url' in config.targets[targetName]! ? config.targets[targetName]!.url : '' },
       startedAt: '', finishedAt: '', blockedReasons: new Map() }, 'interrupted', 'Stopped');
     return { runDir: '', report };
   } });

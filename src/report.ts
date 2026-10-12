@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expectedChecks } from './compiler.ts';
 import { localized, localizeProductMessage, type Locale } from './i18n.ts';
 import type { Suite } from './schema.ts';
+import { targetLabel, type ReportTarget } from './targets.ts';
 
 export type QAStatus = 'passed' | 'failed' | 'blocked' | 'error' | 'interrupted';
 export type QACaseStatus = 'passed' | 'failed' | 'flaky' | 'blocked' | 'skipped' | 'error';
@@ -52,7 +53,7 @@ export interface QAReport {
   runId: string;
   suiteId: string;
   suiteHash: string;
-  target: { name: string; url: string };
+  target: ReportTarget;
   startedAt: string;
   finishedAt: string;
   status: QAStatus;
@@ -65,7 +66,7 @@ export interface ReportContext {
   suite: Suite;
   runId: string;
   suiteHash: string;
-  target: { name: string; url: string };
+  target: ReportTarget;
   startedAt: string;
   finishedAt: string;
   rawDir: string;
@@ -332,7 +333,9 @@ export function renderMarkdown(report: QAReport, locale: Locale = 'en'): string 
     `# ${label('QA results', 'QA 결과')}: ${safe(report.suiteId)}`,
     '',
     `- ${label('Run ID', '실행 ID')}: ${safe(report.runId)}`,
-    `- ${label('Target', '대상')}: ${safe(report.target.name)} ${label('(URL available in the local JSON report)', '(주소는 로컬 JSON 보고서에서 확인)')}`,
+    `- ${label('Target', '대상')}: ${safe(report.target.name)} ${report.target.kind === 'mobile'
+      ? safe(targetLabel(report.target))
+      : label('(URL available in the local JSON report)', '(주소는 로컬 JSON 보고서에서 확인)')}`,
     `- ${label('Status', '상태')}: ${safe(report.status)}`,
     `- ${label('Started', '시작')}: ${safe(report.startedAt)}`,
     `- ${label('Finished', '종료')}: ${safe(report.finishedAt)}`,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -144,5 +144,59 @@ test('CLI defaults to English, supports Korean, and keeps generated example cont
     const override = await exec(process.execPath, [bin, 'validate', 'cases/task-flow.json', '--workspace', dir, '--lang', 'en'],
       { env: { ...process.env, FLOW_QA_LANG: 'ko' } });
     assert.match(override.stdout, /3 valid cases/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('CLI authors native cases before target setup and saves user-selected iOS and Android apps', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-mobile-cli-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir], { env: { ...process.env, FLOW_QA_LANG: '' } });
+  try {
+    await qa('init');
+    await qa('plan', 'flows/task-flow.md', '--platform', 'mobile', '--prompt-only');
+    assert.match(await readFile(join(dir, 'planning/task-flow.prompt.md'), 'utf8'), /platform: "mobile"/);
+    const nativeSuite = { schemaVersion: 'flow-qa/suite-1', platform: 'mobile', id: 'mobile-example', title: 'Native example',
+      requirements: [{ id: 'R1', text: 'Ready is visible after launch.' }],
+      cases: [{ id: 'C1', title: 'Launch', requirementIds: ['R1'], steps: [
+        { type: 'launchApp' }, { type: 'assertVisible', locator: { by: 'text', value: 'Ready' } },
+      ] }] };
+    await writeFile(join(dir, 'cases/mobile-example.json'), JSON.stringify(nativeSuite));
+    await qa('validate', 'cases/mobile-example.json');
+    await qa('generate', 'cases/mobile-example.json');
+    const script = await readFile(join(dir, 'generated/mobile-example.e2e.ts'), 'utf8');
+    assert.match(script, /@e2e-dev\/mobile/);
+    assert.match(script, /app\.open\(\)/);
+    assert.doesNotMatch(script, /@e2e-dev\/web|browser/);
+    await qa('connect', 'ios-test', '--platform', 'ios', '--bundle-id', 'com.example.qa', '--device', 'QA iPhone');
+    await qa('connect', 'android-test', '--platform', 'android', '--bundle-id', 'com.example.qa', '--device', 'emulator-5554');
+    const saved = await readFile(join(dir, 'flowqa.config.json'), 'utf8');
+    const targets = JSON.parse(saved).targets;
+    assert.deepEqual(targets['ios-test'], { kind: 'mobile', platform: 'ios', bundleId: 'com.example.qa', device: 'QA iPhone', description: '' });
+    assert.equal(targets['android-test'].device, 'emulator-5554');
+    for (const args of [
+      ['connect', 'bad', '--platform', 'ios', '--bundle-id', 'com.example.qa'],
+      ['connect', 'bad', '--platform', 'ios', '--bundle-id', 'com.example.qa', '--device', 'QA', '--url', 'https://example.test'],
+      ['connect', 'bad', '--url', 'https://example.test', '--device', 'QA'],
+      ['plan', 'flows/task-flow.md', '--platform', 'ios'],
+    ]) await assert.rejects(qa(...args), (error: unknown) => (error as { code: number }).code === 2);
+    assert.equal(await readFile(join(dir, 'flowqa.config.json'), 'utf8'), saved);
+    const doctor = await qa('doctor', '--lang', 'ko');
+    assert.match(doctor.stdout, /@e2e-dev\/mobile: 0\.11\.0/);
+    assert.match(doctor.stdout, /모바일 대상 ios-test/);
+    assert.match(doctor.stdout, /앱을 설치하거나 실행하지 않습니다/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('CLI report comparison distinguishes mobile device and app identities', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-mobile-compare-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir], { env: { ...process.env, FLOW_QA_LANG: '' } });
+  try {
+    const target = { name: 'qa', kind: 'mobile', platform: 'ios', bundleId: 'com.example.qa', device: 'QA iPhone' };
+    const report = { suiteHash: 'a'.repeat(64), suiteId: 'mobile-suite', target, cases: [{ id: 'C1', status: 'passed' }] };
+    for (const [name, currentTarget] of [['before', target], ['same', target], ['device', { ...target, device: 'Other iPhone' }], ['app', { ...target, bundleId: 'com.example.other' }]] as const) {
+      await mkdir(join(dir, name));
+      await writeFile(join(dir, name, 'qa-report.json'), JSON.stringify({ ...report, target: currentTarget }));
+    }
+    assert.match((await qa('compare', 'before', 'same')).stdout, /Comparing the same suite and target/);
+    for (const changed of ['device', 'app']) assert.match((await qa('compare', 'before', changed)).stdout, /Suite or target differs/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

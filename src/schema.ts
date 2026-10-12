@@ -15,6 +15,9 @@ export const locatorSchema = z.discriminatedUnion('by', [
 
 export const stepSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('open'), path: text.refine((v) => v.startsWith('/') && !v.startsWith('//') && !v.includes('\\'), 'Use an app-relative path starting with /.') }).strict(),
+  z.object({ type: z.literal('launchApp') }).strict(),
+  z.object({ type: z.literal('back') }).strict(),
+  z.object({ type: z.literal('swipe'), direction: z.enum(['up', 'down', 'left', 'right']) }).strict(),
   z.object({ type: z.literal('act'), instruction: text }).strict(),
   z.object({ type: z.literal('click'), locator: locatorSchema }).strict(),
   z.object({ type: z.literal('fill'), locator: locatorSchema, value: z.string().max(8192) }).strict(),
@@ -35,6 +38,7 @@ const caseSchema = z.object({
 
 export const suiteSchema = z.object({
   schemaVersion: z.literal('flow-qa/suite-1'),
+  platform: z.enum(['web', 'mobile']).optional(),
   id: idSchema,
   title: text,
   source: z.object({ file: text, sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),
@@ -50,6 +54,12 @@ export const suiteSchema = z.object({
   suite.cases.forEach((test, index) => {
     if (test.requirementIds.some((id) => !ids.has(id))) ctx.addIssue({ code: 'custom', path: ['cases', index, 'requirementIds'], message: 'Unknown requirement ID.' });
     if (!test.questions.length && !test.steps.some((s) => s.type.startsWith('assert'))) ctx.addIssue({ code: 'custom', path: ['cases', index, 'steps'], message: 'A runnable case needs an explicit assertion.' });
+    test.steps.forEach((step, stepIndex) => {
+      const invalid = suite.platform === 'mobile'
+        ? step.type === 'open' || step.type === 'assertUrl'
+        : step.type === 'launchApp' || step.type === 'back' || step.type === 'swipe';
+      if (invalid) ctx.addIssue({ code: 'custom', path: ['cases', index, 'steps', stepIndex, 'type'], message: `The ${step.type} step is not available on ${suite.platform ?? 'web'} suites.` });
+    });
   });
 });
 
@@ -61,10 +71,21 @@ export const modelSchema = z.object({
 
 export const plannerSchema = modelSchema;
 
-export const targetSchema = z.object({
+const webTargetSchema = z.object({
   url: httpURL,
   description: z.string().max(2000).default(''),
+  kind: z.literal('web').optional(),
 }).strict();
+
+const mobileTargetSchema = z.object({
+  kind: z.literal('mobile'),
+  platform: z.enum(['ios', 'android']),
+  bundleId: z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Use a native app ID without spaces or control characters.'),
+  device: z.string().trim().min(1).max(200).refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value), 'Device names cannot contain control characters.'),
+  description: z.string().max(2000).default(''),
+}).strict();
+
+export const targetSchema = z.union([webTargetSchema, mobileTargetSchema]);
 
 export const configSchema = z.object({
   schemaVersion: z.literal('flow-qa/config-1'),

@@ -55,10 +55,16 @@
     $('sidebar').classList.remove('nav-open'); $('nav-toggle').setAttribute('aria-expanded', 'false');
     if (name === 'history') renderHistory();
   }
+  function suitePlatform() { return app.draft?.platform || 'web'; }
+  function targetPlatform(target) { return target?.kind === 'mobile' ? 'mobile' : 'web'; }
+  function selectedTarget() { return app.displayTargets.find((target) => target.name === $('target-select').value); }
+  function targetLabel(target) { return target?.kind === 'mobile' ? `${target.platform === 'ios' ? 'iOS' : 'Android'} · ${target.bundleId} · ${target.device}` : target?.url || ''; }
+  function targetDisplay(target) { return `${target?.name || t('app.noTarget')} · ${targetLabel(target)}`; }
+  function compatibleTarget() { const target = selectedTarget(); return target && targetPlatform(target) === suitePlatform(); }
   function readiness() {
     const active = app.state?.active;
     const ready = !!app.draft && !!app.script && !app.stale && !app.dirty;
-    $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !$('review-checkbox').checked || !$('target-select').value || !!active || app.busy;
+    $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !$('review-checkbox').checked || !compatibleTarget() || !!active || app.busy;
     $('save-btn').disabled = !ready || app.busy;
     $('script-download').disabled = !ready;
     for (const id of ['stop-btn', 'global-stop-btn']) {
@@ -72,6 +78,8 @@
     $('flow-input').disabled = app.busy;
     $('suite-editor').disabled = app.busy;
     $('prompt-btn').disabled = app.busy;
+    $('scenario-platform').disabled = app.busy;
+    $('mobile-setup-hint').hidden = suitePlatform() !== 'mobile' && $('scenario-platform').value !== 'mobile';
     $('run-readiness').textContent = t(!app.connected ? 'app.connectionRequired'
       : active ? (active.status === 'stopping' ? 'app.stopping' : active.kind === 'plan' ? 'app.planning' : 'app.running')
       : app.stale ? 'app.stale'
@@ -79,6 +87,7 @@
       : !ready ? 'app.needValidated'
       : !app.savedFile || !app.savedHash ? 'app.needSaved'
       : !$('target-select').value ? 'app.needTarget'
+      : !compatibleTarget() ? 'app.platformMismatch'
       : !$('review-checkbox').checked ? 'app.needReview' : 'app.ready');
     const cases = app.draft?.cases || [];
     const blocked = cases.filter((item) => item.questions?.length || (item.steps.some((step) => ['act', 'assertAgent'].includes(step.type)) && !app.state?.models?.agent?.keyReady)).length;
@@ -98,6 +107,9 @@
     const target = locatorText(step.locator);
     switch (step.type) {
       case 'open': return t('app.stepOpen', { path: step.path });
+      case 'launchApp': return t('app.stepLaunchApp');
+      case 'back': return t('app.stepBack');
+      case 'swipe': return t('app.stepSwipe', { direction: step.direction });
       case 'click': return t('app.stepClick', { target });
       case 'fill': return t('app.stepFill', { target, value: step.value });
       case 'assertVisible': return t(step.visible === false ? 'app.stepHidden' : 'app.stepVisible', { target });
@@ -137,23 +149,24 @@
   function setDraft(suite, script, origin, sourceFlow = '', savedFile = '', savedHash = '') {
     app.draft = suite; app.script = script; app.origin = origin; app.sourceFlow = sourceFlow; app.boundSource = suite.source ? { ...suite.source } : null; app.savedFile = savedFile; app.savedHash = savedHash; app.stale = false; app.dirty = false;
     $('suite-editor').value = JSON.stringify(suite, null, 2);
+    $('scenario-platform').value = suite.platform || 'web';
     $('review-checkbox').checked = false;
     summarize(suite); readiness();
   }
   function targetOptions() {
     const selected = $('target-select').value;
-    const previousURL = app.displayTargets.find((item) => item.name === selected)?.url;
+    const previousFingerprint = app.displayTargets.find((item) => item.name === selected)?.targetFingerprint;
     app.displayTargets = (app.state?.targets || []).map((target) => ({ ...target }));
     replace($('target-select'), el('option', '', t('scenario.selectTarget')));
     $('target-select').firstChild.value = '';
-    for (const target of app.state?.targets || []) { const option = el('option', '', target.name); option.value = target.name; $('target-select').append(option); }
+    for (const target of app.state?.targets || []) { const option = el('option', '', targetDisplay(target)); option.value = target.name; $('target-select').append(option); }
     if ((app.state?.targets || []).some((x) => x.name === selected)) $('target-select').value = selected;
-    if (previousURL !== app.displayTargets.find((item) => item.name === selected)?.url) $('review-checkbox').checked = false;
+    if (previousFingerprint !== app.displayTargets.find((item) => item.name === selected)?.targetFingerprint) $('review-checkbox').checked = false;
     targetDescription();
     const list = $('target-list'); replace(list);
-    for (const target of app.state?.targets || []) { const row = el('div', 'settings-entry'); row.append(el('strong', '', target.name), document.createTextNode(` · ${target.url}${target.description ? ` · ${target.description}` : ''}`)); list.append(row); }
+    for (const target of app.state?.targets || []) { const row = el('div', 'settings-entry'); row.append(el('strong', '', target.name), document.createTextNode(` · ${targetLabel(target)}${target.description ? ` · ${target.description}` : ''}`)); list.append(row); }
   }
-  function targetDescription() { const target = app.displayTargets.find((item) => item.name === $('target-select').value); $('target-description').textContent = target ? `${target.url}${target.description ? ` · ${target.description}` : ''}` : t('scenario.targetHint'); readiness(); }
+  function targetDescription() { const target = selectedTarget(); $('target-description').textContent = target ? `${targetLabel(target)}${target.description ? ` · ${target.description}` : ''}` : t('scenario.targetHint'); readiness(); }
   function modelDescription(role) {
     const model = app.state?.models?.[role] || {};
     const explanation = t(role === 'planner' ? 'app.modelPlannerHelp' : 'app.modelAgentHelp');
@@ -192,7 +205,7 @@
     const runs = app.state?.runs || [];
     if (!runs.length) { host.append(el('p', 'empty', t(app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty'))); return; }
     for (const run of runs) {
-      const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: run.target?.name || t('app.noTarget'), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
+      const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
     }
   }
@@ -226,16 +239,16 @@
     const flow = $('flow-input').value.trim();
     if (!flow) throw localizedError('app.enterFlow');
     if (!app.state?.models?.planner?.configured || app.state.models.planner.kind !== 'openai-compatible' || !app.state.models.planner.keyReady) throw localizedError('app.configurePlanner');
-    const request = ++app.planRequest;
+    const request = ++app.planRequest; const platform = $('scenario-platform').value;
     app.planning = true; renderActive(); noticeKey('app.planStarted');
     try {
-      const result = await api('/api/plan', { flow });
+      const result = await api('/api/plan', { flow, platform });
       if (request !== app.planRequest) { noticeKey('app.planCancelledLate'); return; }
       setDraft(result.suite, result.script, 'generated', flow); noticeKey('app.planComplete');
     } catch (error) { if (request !== app.planRequest) noticeKey('app.planCancelledDraft'); else throw error; }
     finally { app.planning = false; await refresh(false).catch(() => {}); }
   }); }
-  async function prompt() { await work(async () => { const flow = $('flow-input').value.trim(); if (!flow) throw localizedError('app.enterFlow'); const result = await api('/api/prompt', { flow }); download('flow-qa-prompt.md', result.prompt, 'text/markdown'); noticeKey('app.promptDownloaded'); }); }
+  async function prompt() { await work(async () => { const flow = $('flow-input').value.trim(); if (!flow) throw localizedError('app.enterFlow'); const result = await api('/api/prompt', { flow, platform: $('scenario-platform').value }); download('flow-qa-prompt.md', result.prompt, 'text/markdown'); noticeKey('app.promptDownloaded'); }); }
   async function compile() { await work(async () => {
     if (app.stale) throw localizedError('app.compileStale');
     let suite; try { suite = JSON.parse($('suite-editor').value); } catch { throw localizedError('app.invalidJson'); }
@@ -249,7 +262,7 @@
     noticeKey('app.compileComplete');
   }); }
   async function save() { await work(async () => { if (!app.draft || app.dirty || app.stale) throw localizedError('app.needValidated'); const body = { suite: app.draft }; if (!app.boundSource && app.sourceFlow && app.sourceFlow === $('flow-input').value.trim()) body.flow = app.sourceFlow; const result = await api('/api/save', body); const saved = await api(`/api/suite?file=${encodeURIComponent(result.file)}`); $('flow-input').value = saved.flow || ''; setDraft(saved.suite, saved.script, 'library', saved.flow || '', result.file, saved.suiteHash || ''); noticeKey('app.savedSuite', { file: result.file }); await refresh(false); }); }
-  async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !$('review-checkbox').checked || !$('target-select').value) throw localizedError('app.runNotReady'); const result = await api('/api/run', { suite: app.savedFile, suiteHash: app.savedHash, targetName: $('target-select').value, targetURL: app.displayTargets.find((target) => target.name === $('target-select').value)?.url }); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
+  async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !$('review-checkbox').checked || !compatibleTarget()) throw localizedError('app.runNotReady'); const target = selectedTarget(); const result = await api('/api/run', { suite: app.savedFile, suiteHash: app.savedHash, targetName: target.name, targetFingerprint: target.targetFingerprint }); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
   async function stop() {
     if (app.stopping || !app.state?.active) return;
     if (app.state.active.kind === 'plan' && app.planning) app.planRequest += 1;
@@ -271,9 +284,9 @@
   }
   function renderReport() {
     const report = app.report; if (!report) return;
-    $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${report.target?.name || ''}`;
+    $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${targetDisplay(report.target)}`;
     const host = $('report-content'); replace(host);
-    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: report.target?.name || '' }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); host.append(meta);
+    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); host.append(meta);
     if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
     if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
     for (const item of report.cases || []) {
@@ -302,7 +315,8 @@
   }
   async function saveModel(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const body = { role: form.dataset.role, baseURL: String(values.get('baseURL') || '').trim(), model: String(values.get('model') || '').trim() }; const apiKeyEnv = String(values.get('apiKeyEnv') || '').trim(); if (apiKeyEnv) body.apiKeyEnv = apiKeyEnv; await api('/api/models', body); await refresh(true); noticeKey('app.modelSaved'); }); }
   async function clearModel(role) { await work(async () => { await api('/api/models', { role, clear: true }); await refresh(true); noticeKey('app.modelCleared'); }); }
-  async function saveTarget(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); await api('/api/targets', { name: String(values.get('name') || '').trim(), url: String(values.get('url') || '').trim(), description: String(values.get('description') || '').trim() }); form.reset(); await refresh(true); noticeKey('app.targetSaved'); }); }
+  function targetFields() { const mobile = $('target-kind').value !== 'web'; for (const [id, required] of [['target-url-field', !mobile], ['target-bundle-field', mobile], ['target-device-field', mobile]]) { const field = $(id); field.hidden = !required; field.querySelector('input').required = required; } }
+  async function saveTarget(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const kind = String(values.get('kind') || 'web'); const body = { name: String(values.get('name') || '').trim(), description: String(values.get('description') || '').trim() }; if (kind === 'web') body.url = String(values.get('url') || '').trim(); else { body.kind = 'mobile'; body.platform = kind; body.bundleId = String(values.get('bundleId') || '').trim(); body.device = String(values.get('device') || '').trim(); } await api('/api/targets', body); form.reset(); targetFields(); await refresh(true); noticeKey('app.targetSaved'); }); }
   function renderLanguage() {
     const editedModels = [...document.querySelectorAll('.model-form')].map((form) => ({ role: form.dataset.role, values: Object.fromEntries([...form.querySelectorAll('input')].map((input) => [input.name, input.value])) }));
     const focusedModel = document.activeElement?.closest?.('.model-form');
@@ -310,6 +324,8 @@
     $('breadcrumb').textContent = t('app.breadcrumb', { name: t(names[app.view]) });
     const emptyTarget = $('target-select').querySelector('option[value=""]');
     if (emptyTarget) emptyTarget.textContent = t('scenario.selectTarget');
+    for (const option of $('target-select').options) { const target = app.displayTargets.find((item) => item.name === option.value); if (target) option.textContent = targetDisplay(target); }
+    const targetList = $('target-list'); for (const [row, target] of [...targetList.children].map((node, index) => [node, app.displayTargets[index]])) { if (target) row.replaceChildren(el('strong', '', target.name), document.createTextNode(` · ${targetLabel(target)}${target.description ? ` · ${target.description}` : ''}`)); }
     modelForms();
     for (const edited of editedModels) {
       const form = [...document.querySelectorAll('.model-form')].find((item) => item.dataset.role === edited.role);
@@ -340,6 +356,7 @@
       $('suite-editor').focus();
     });
     $('flow-input').addEventListener('input', () => { if ((app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== app.sourceFlow.trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; readiness(); } });
+    $('scenario-platform').addEventListener('change', () => { app.planRequest += 1; if (app.draft) { app.stale = true; app.savedHash = ''; } $('review-checkbox').checked = false; readiness(); });
     $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
     $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; targetDescription(); });
     $('plan-btn').addEventListener('click', generate); $('prompt-btn').addEventListener('click', prompt); $('compile-btn').addEventListener('click', compile); $('save-btn').addEventListener('click', save); $('run-btn').addEventListener('click', run); $('stop-btn').addEventListener('click', stop);
@@ -349,6 +366,7 @@
     $('report-md').addEventListener('click', downloadReportMarkdown);
     $('report-json').addEventListener('click', () => { if (app.report) download(`${app.selectedRun}.json`, JSON.stringify(app.report, null, 2), 'application/json'); });
     $('target-form').addEventListener('submit', saveTarget);
+    $('target-kind').addEventListener('change', targetFields); targetFields();
     $('language-select').addEventListener('change', (event) => i18n.setLocale(event.currentTarget.value));
     i18n.onChange(renderLanguage);
     let refreshing = false;

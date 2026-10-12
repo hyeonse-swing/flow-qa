@@ -12,6 +12,7 @@ import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
 import { runSuite } from './engine.ts';
 import { renderMarkdown, type QAReport } from './report.ts';
+import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
 
 const help: Record<Locale, string> = {
   en: `Flow QA — turn user flows into repeatable tests and evidence-backed QA reports
@@ -20,8 +21,11 @@ Usage: flow-qa <command> [arguments] [options]
 
   init [directory]                    Create configuration and a local example (preserve existing files)
   connect <name> --url <url>           Register a test target
+  connect <name> --platform ios|android --bundle-id <id> --device <name-or-id>
+                                      Register an installed mobile app (setup can wait until execution)
   model <planner|agent> --url <base> --model <id> [--key-env ENV_NAME]
-  plan <flow.md> [--out cases.json]    Plan cases with a model; produce a prompt if none is configured
+  plan <flow.md> [--platform web|mobile] [--out cases.json]
+                                      Plan cases before target setup; produce a prompt if no model is configured
   plan <flow.md> --prompt-only         Create a prompt for your current AI tool
   validate <cases.json>               Check case structure and assertions
   generate <cases.json> [--out test.ts] Generate e2e test code
@@ -42,8 +46,11 @@ Local example: flow-qa ui --demo
 
   init [directory]                    설정과 로컬 예제 생성 (기존 파일 보존)
   connect <name> --url <url>           테스트 대상 등록
+  connect <name> --platform ios|android --bundle-id <id> --device <name-or-id>
+                                      설치된 모바일 앱 등록 (실행 전까지 설정 가능)
   model <planner|agent> --url <base> --model <id> [--key-env ENV_NAME]
-  plan <flow.md> [--out cases.json]    모델로 케이스 설계; 미연결 시 실행용 프롬프트 생성
+  plan <flow.md> [--platform web|mobile] [--out cases.json]
+                                      대상 설정 전에 케이스 설계; 모델 미연결 시 프롬프트 생성
   plan <flow.md> --prompt-only         현재 사용하는 AI에 전달할 프롬프트 생성
   validate <cases.json>               케이스 구조와 검증 조건 확인
   generate <cases.json> [--out test.ts] e2e 테스트 코드 생성
@@ -112,6 +119,7 @@ export async function main(args: string[]): Promise<void> {
     const { positionals, values } = parseArgs({ args, allowPositionals: true, strict: true, options: {
       workspace: { type: 'string' }, url: { type: 'string' }, model: { type: 'string' },
       'key-env': { type: 'string' }, out: { type: 'string' }, target: { type: 'string' },
+      platform: { type: 'string' }, 'bundle-id': { type: 'string' }, device: { type: 'string' },
       'prompt-only': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
       demo: { type: 'boolean' }, port: { type: 'string' }, 'with-deps': { type: 'boolean' }, lang: { type: 'string' },
     } });
@@ -122,6 +130,10 @@ export async function main(args: string[]): Promise<void> {
     const [command, arg, second] = positionals;
     const workspace = resolve(values.workspace ?? '.');
     if (!command || (values.help && command !== 'ui')) { console.log(help[locale]); return; }
+    if (values.platform !== undefined && command !== 'connect' && command !== 'plan' ||
+        (values['bundle-id'] !== undefined || values.device !== undefined) && command !== 'connect') {
+      throw new Error(localized(locale, 'Platform and device options are only supported by connect and plan. See --help.', '플랫폼·기기 옵션은 connect와 plan에서만 사용할 수 있습니다. --help를 참고하세요.'));
+    }
     if (values.demo && command !== 'ui' || values.port && command !== 'ui' ||
       values['with-deps'] && (command !== 'browser' || arg !== 'install')) throw new Error(localized(locale, 'This option is not supported for the command. See --help.', '이 명령에서 사용할 수 없는 옵션입니다. --help를 참고하세요.'));
     if (command === 'ui') {
@@ -149,9 +161,16 @@ export async function main(args: string[]): Promise<void> {
     if (command === 'connect') {
       const config = await readConfig(workspace);
       const name = idSchema.parse(required(arg, localized(locale, 'Target name', '대상 이름'), locale));
-      config.targets[name] = targetSchema.parse({ url: required(values.url, '--url', locale) });
+      const platform = values.platform ?? 'web';
+      if (!['web', 'ios', 'android'].includes(platform)) throw new Error(localized(locale, 'Target platform must be web, ios, or android.', '대상 플랫폼은 web, ios, android 중 하나여야 합니다.'));
+      if (platform === 'web' && (values['bundle-id'] !== undefined || values.device !== undefined) || platform !== 'web' && values.url !== undefined) {
+        throw new Error(localized(locale, 'Use --url for web, or --bundle-id and --device for a mobile app.', '웹은 --url, 모바일 앱은 --bundle-id와 --device를 사용하세요.'));
+      }
+      config.targets[name] = targetSchema.parse(platform === 'web'
+        ? { url: required(values.url, '--url', locale) }
+        : { kind: 'mobile', platform, bundleId: required(values['bundle-id'], '--bundle-id', locale), device: required(values.device, '--device', locale) });
       await writeConfig(workspace, config);
-      console.log(localized(locale, `Target ${name} connected: ${config.targets[name]!.url}`, `대상 ${name} 연결: ${config.targets[name]!.url}`)); return;
+      console.log(localized(locale, `Target ${name} saved: ${targetLabel(config.targets[name]!)}. No app has been launched.`, `대상 ${name} 저장: ${targetLabel(config.targets[name]!)}. 앱은 실행하지 않았습니다.`)); return;
     }
     if (command === 'model') {
       if (arg !== 'planner' && arg !== 'agent') throw new Error(localized(locale, 'Model role must be planner or agent.', '모델 종류는 planner 또는 agent여야 합니다.'));
@@ -162,6 +181,8 @@ export async function main(args: string[]): Promise<void> {
       console.log(localized(locale, `${arg} model connection saved. No model call has been made. API key values are not saved in the configuration file.`, `${arg} 모델 연결 설정 저장. 실제 호출 전입니다. API 키 값은 설정 파일에 저장하지 않습니다.`)); return;
     }
     if (command === 'plan') {
+      const platform = values.platform ?? 'web';
+      if (platform !== 'web' && platform !== 'mobile') throw new Error(localized(locale, 'Planning platform must be web or mobile.', '설계 플랫폼은 web 또는 mobile이어야 합니다.'));
       const flowPath = resolve(workspace, required(arg, localized(locale, 'Flow file', '플로우 파일'), locale));
       const flow = await readFile(flowPath, 'utf8');
       if (Buffer.byteLength(flow) > 128_000) throw new Error(localized(locale, 'The flow file must be 128 KB or smaller.', '플로우 파일은 128 KB 이하여야 합니다.'));
@@ -169,13 +190,13 @@ export async function main(args: string[]): Promise<void> {
       const stem = basename(flowPath).replace(/\.[^.]+$/, '');
       if (values['prompt-only'] || !config.planner) {
         const output = resolve(workspace, values.out ?? `planning/${stem}.prompt.md`);
-        await writeOutput(output, buildPlanningPrompt(flow));
+        await writeOutput(output, buildPlanningPrompt(flow, platform));
         console.log(localized(locale, `Planning prompt: ${output}\nSend it to your AI tool, save the returned JSON under cases/, then run validate → generate → run.`, `설계 프롬프트: ${output}\n연결된 AI에 전달하고 응답 JSON을 cases/에 저장한 뒤 validate → generate → run을 실행하세요.`)); return;
       }
       const output = resolve(workspace, values.out ?? `cases/${stem}.json`);
       try { await access(output); throw new Error(localized(locale, 'The output file already exists. Use --out to choose a new path.', '출력 파일이 이미 있습니다. --out으로 새 경로를 지정하세요.')); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-      const suite = await planFlow(flow, config.planner);
+      const suite = await planFlow(flow, config.planner, { platform });
       suite.source = { file: arg!, sha256: sha256(flow) };
       await writeJSON(output, suite, true);
       console.log(localized(locale, `Cases created: ${output}\n${suite.cases.filter((c) => c.questions.length).length} of ${suite.cases.length} cases have open questions.`, `케이스 생성: ${output}\n${suite.cases.length}개 중 확인 질문이 있는 케이스 ${suite.cases.filter((c) => c.questions.length).length}개`)); return;
@@ -216,10 +237,13 @@ export async function main(args: string[]): Promise<void> {
       const load = async (dir: string | undefined) => {
         const data = JSON.parse(await readFile(resolve(workspace, required(dir, localized(locale, 'Run directory', '실행 폴더'), locale), 'qa-report.json'), 'utf8'));
         if (!Array.isArray(data.cases) || typeof data.suiteHash !== 'string' || typeof data.suiteId !== 'string') throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
-        return data as { suiteHash: string; suiteId: string; target: { name: string; url: string }; cases: { id: string; status: string }[] };
+        if (!data.target || typeof data.target.name !== 'string') throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
+        const { name: _targetName, ...identity } = data.target;
+        if (!targetSchema.safeParse(identity).success) throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
+        return data as { suiteHash: string; suiteId: string; target: ReportTarget; cases: { id: string; status: string }[] };
       };
       const before = await load(arg), after = await load(second);
-      const comparable = before.suiteHash === after.suiteHash && before.target.url === after.target.url;
+      const comparable = before.suiteHash === after.suiteHash && targetFingerprint(before.target) === targetFingerprint(after.target);
       console.log(comparable ? localized(locale, 'Comparing the same suite and target (check external data state separately)', '동일 명세·대상 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite or target differs; no direct regression verdict is made.', '명세 또는 대상이 달라 직접적인 회귀 판정은 하지 않습니다.'));
       const previous = new Map(before.cases.map((c) => [c.id, c.status]));
       const current = new Map(after.cases.map((c) => [c.id, c.status]));
@@ -231,13 +255,18 @@ export async function main(args: string[]): Promise<void> {
       const keyStatus = (apiKeyEnv: string | undefined) => !apiKeyEnv
         ? localized(locale, 'key environment variable not configured', '키 환경 변수 미지정')
         : localized(locale, `${apiKeyEnv}: ${process.env[apiKeyEnv] ? 'set' : 'missing'}`, `${apiKeyEnv}: ${process.env[apiKeyEnv] ? '설정됨' : '누락'}`);
-      for (const pkg of ['e2e', '@e2e-dev/web', 'playwright']) {
+      for (const pkg of ['e2e', '@e2e-dev/web', '@e2e-dev/mobile', 'playwright']) {
         console.log(`${pkg}: ${await installedVersion(pkg, locale)}`);
       }
       const hasChromium = await chromiumInstalled();
       console.log(localized(locale, `Node: ${process.version}\nChromium: ${hasChromium ? 'installed' : 'missing (flow-qa browser install)'}\nTargets: ${Object.keys(config.targets).join(', ') || 'none'}\nPlanner model: ${config.planner ? 'configured' : 'not configured (prompt handoff available)'}\nAgent model: ${config.agent ? 'configured' : 'not configured (deterministic tests available)'}`, `Node: ${process.version}\nChromium: ${hasChromium ? '설치됨' : '미설치 (flow-qa browser install)'}\n대상: ${Object.keys(config.targets).join(', ') || '없음'}\n설계 모델: ${config.planner ? '연결 설정됨' : '미연결 (프롬프트 전달 가능)'}\n실행 모델: ${config.agent ? '연결 설정됨' : '미연결 (고정 조작 테스트 가능)'}`));
       if (config.planner) console.log(localized(locale, `Planner API key: ${keyStatus(config.planner.apiKeyEnv)}`, `설계 모델 API 키: ${keyStatus(config.planner.apiKeyEnv)}`));
       if (config.agent) console.log(localized(locale, `Agent API key: ${keyStatus(config.agent.apiKeyEnv)}`, `실행 모델 API 키: ${keyStatus(config.agent.apiKeyEnv)}`));
+      const nativeTargets = Object.entries(config.targets).filter(([, target]) => target.kind === 'mobile');
+      if (nativeTargets.length) {
+        for (const [name, target] of nativeTargets) console.log(localized(locale, `Mobile target ${name}: ${targetLabel(target)}`, `모바일 대상 ${name}: ${targetLabel(target)}`));
+        console.log(localized(locale, 'Mobile app/device readiness is checked when you run. Saving a target does not install or launch an app.', '모바일 앱·기기 준비 상태는 실행할 때 확인합니다. 대상 저장만으로 앱을 설치하거나 실행하지 않습니다.'));
+      }
       return;
     }
     throw new Error(localized(locale, `Unknown command: ${command}`, `알 수 없는 명령: ${command}`));

@@ -13,10 +13,10 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 
 ## 로컬 데모 시작
 
-Node.js 24 이상이 필요합니다. 브라우저는 첫 실행 전에 설치합니다.
+Node.js 24.8 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.3
+npm install -g @ihyeon/flow-qa@0.2.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -60,6 +60,12 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 
 `flow-qa doctor --workspace my-qa`로 로컬 의존성과 모델 인증용 환경 변수의 설정 여부를 확인할 수 있습니다. 키 값은 출력하지 않고 모델 서버도 호출하지 않습니다. 환경 변수가 있어도 실제 인증 성공을 확인한 것은 아닙니다.
 
+## 모바일 대상
+
+`0.2.0`부터 사용자가 직접 설정하는 iOS·Android 대상을 지원합니다. 시나리오 화면에서 **모바일**을 선택하면 앱을 정하기 전에도 케이스를 준비할 수 있습니다. 이후 **연결 설정**에서 플랫폼·설치된 앱의 번들/패키지 ID·기기를 등록하고 실행할 때 선택합니다. 설정 저장은 앱 설치나 테스트 실행을 시작하지 않습니다.
+
+CLI에서는 `plan flow.md --platform mobile --prompt-only`로 준비하고, `connect my-ios --platform ios --bundle-id com.example.app --device "QA iPhone"`으로 연결합니다. 예시의 앱과 기기 이름은 본인 환경으로 바꾸세요. 기존 웹 대상과 케이스도 유지됩니다. 준비 환경과 모바일 단계·검증 범위는 [모바일 가이드](docs/mobile.md)를 참고하세요.
+
 ## 설계 원칙과 결과 해석
 
 - 케이스는 요구사항 ID와 명시적인 assertion을 가집니다. `open`, `click`, `fill`, `act`, `assertVisible`, `assertText`, `assertUrl`, `assertAgent` 등 허용된 단계만 스키마로 검증해 컴파일합니다. 모델 응답의 임의 JavaScript나 shell 명령은 실행하지 않습니다.
@@ -68,7 +74,7 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 - 실행마다 `.flowqa/runs/<run-id>/`에 새 리포트와 엔진 결과를 만듭니다. `qa-report.json`과 `qa-report.md`는 통과, 실패, 재시도 후 통과, 차단, 오류, 미실행을 구분합니다. assertion 실패는 관찰 결과이며 제품 버그 확정은 아닙니다.
 - 취소한 실행은 중단으로 기록합니다. UI의 생성 취소는 늦게 도착한 응답을 반영하지 않지만 모델 제공자의 처리나 과금 취소를 보장하지 않습니다. 엔진의 토큰·추정 비용만 표시하며 전체 비용 상한은 없습니다.
 
-리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 기기, 예약 CI 실행, 팀 권한과 공유 서버는 현재 지원 범위에 포함되지 않습니다.
+리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 SDK·기기·앱의 자동 준비, 예약 CI 실행, 팀 권한과 공유 서버는 현재 지원 범위에 포함되지 않습니다.
 
 ![실제 세 케이스 실행 결과](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
 

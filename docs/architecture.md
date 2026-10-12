@@ -1,6 +1,6 @@
 # Architecture and verification boundaries
 
-The local CLI and loopback web UI share one workspace format, case schema, execution path, and report contract. Flow QA runs browser tests against a target URL; it does not need the target application's source code.
+The local CLI and loopback web UI share one workspace format, case schema, execution path, and report contract. Flow QA runs browser tests against a target URL and native tests against a user-configured iOS or Android app/device. It does not need the target application's source code. Mobile integration is available from version 0.2.0; see the [mobile guide](mobile.md).
 
 ```mermaid
 flowchart LR
@@ -8,7 +8,7 @@ flowchart LR
   B --> C[JSON case suite]
   C --> D[Schema and source-hash validation]
   D --> E[Compile allowed steps to e2e code]
-  E --> F[tester-army/e2e browser run]
+  E --> F[tester-army/e2e web or mobile run]
   F --> G[QA report with attempts and evidence]
   H[CLI / local UI] --> B
   H --> D
@@ -22,7 +22,9 @@ flowchart LR
 
 **Only a defined vocabulary compiles.** The schema checks requirement references, assertions, step types, and inputs. It does not execute arbitrary code or shell commands from model output. Cases with unresolved `questions`, or steps that need an unavailable agent model, are blocked. `preconditions` describe required state; they are not an automatic setup contract.
 
-**Source and evidence stay linked.** Planning records the source flow's SHA-256 hash in the suite. `validate`, `generate`, and `run` check it again and stop when the flow changed. Each execution writes a new directory with a suite snapshot, generated tests, raw engine output, and Markdown/JSON reports. Previous evidence is not reused as a current success. `compare` permits a direct comparison only for the same suite hash and target URL; it cannot establish that external data was unchanged.
+**Source and evidence stay linked.** Planning records the source flow's SHA-256 hash in the suite. `validate`, `generate`, and `run` check it again and stop when the flow changed. Each execution writes a new directory with a suite snapshot, generated tests, raw engine output, and Markdown/JSON reports. Previous evidence is not reused as a current success. `compare` permits a direct comparison only for the same suite hash and target identity (web URL or native platform/app/device); it cannot establish that external data was unchanged.
+
+**Targets can be configured after authoring.** A suite's optional platform distinguishes web from mobile. Omitted platform preserves legacy web suites and their hashes. Native app IDs and explicit device names belong to target settings, not generated code from the planner. UI execution checks a fingerprint of the reviewed target identity. Mobile runtime readiness is checked before device execution; configuration alone does not prove connectivity.
 
 **Blocked and failed mean different things.** An unreachable app or unresolved question is blocked; an assertion mismatch is failed. A pass after retry has its own status. Engine output is validated rather than treating missing results as passes. The report records observations, not a root-cause verdict on the product.
 
@@ -31,8 +33,8 @@ flowchart LR
 | Area | Flow QA provides | External implementation or prerequisite |
 | --- | --- | --- |
 | Planning | Prompt, model connection, JSON schema validation | User-selected OpenAI-compatible model |
-| Execution | Step compilation, target connection, orchestration, cancellation | [tester-army/e2e](https://github.com/tester-army/e2e), Chromium |
+| Execution | Step compilation, target connection, orchestration, cancellation | [tester-army/e2e](https://github.com/tester-army/e2e), Chromium for web or `@e2e-dev/mobile`/agent-device for native apps |
 | Results | A fresh report per run, status interpretation, evidence links | Raw runs and evidence from the engine |
 | UI | Local workflow screens and English/Korean language switch | [Hyeonse Design System](https://github.com/hyeonse-swing/hyeonse-design-system) tokens and preference utilities |
 
-The UI binds only to `127.0.0.1` and serves approved report evidence, not arbitrary raw logs or HTML/SVG. Local reports may still contain data from the tested app and should be reviewed before sharing. This release does not manage login sessions, cap model spending, schedule CI runs, or support mobile devices.
+The UI binds only to `127.0.0.1` and serves approved report evidence, not arbitrary raw logs or HTML/SVG. Local reports may still contain data from the tested app and should be reviewed before sharing. It does not manage login sessions, cap model spending, schedule CI runs, or provision mobile SDKs, devices, and application builds.

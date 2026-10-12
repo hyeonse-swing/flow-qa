@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import ts from 'typescript';
 import { runSuite } from '../src/engine.ts';
 import type { Config, Suite } from '../src/schema.ts';
 
@@ -72,4 +73,74 @@ test('direct runSuite rejects a stale source before launching e2e and still writ
   assert.equal(result.report.status, 'error');
   assert.match(result.report.errors.join(' '), /STALE_SUITE/);
   assert.ok(readFileSync(path.join(result.runDir, 'qa-report.json'), 'utf8').includes('STALE_SUITE'));
+});
+
+function nativeSuite(): Suite {
+  return { ...suite('native'), platform: 'mobile', cases: [{ id: 'C1', title: 'native', requirementIds: ['R1'],
+    preconditions: [], questions: [], steps: [{ type: 'assertVisible', locator: { by: 'text', value: 'Ready' }, visible: true }] }] };
+}
+
+const nativeConfig: Config = { ...config, targets: { phone: { kind: 'mobile', platform: 'android', bundleId: 'com.example.app', device: 'R58N123', description: '' } } };
+
+test('suite and target platform mismatch blocks before subprocess with zero attempts', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const result = await runSuite({ workspace, suite: nativeSuite(), config, targetName: 'local' });
+  assert.equal(result.report.status, 'blocked');
+  assert.equal(result.report.cases[0]?.status, 'blocked');
+  assert.equal(result.report.cases[0]?.attempts.length, 0);
+  assert.match(result.report.cases[0]?.reason ?? '', /suite platform does not match/);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
+});
+
+test('missing or unavailable native device blocks before subprocess with zero attempts', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const missing = { ...nativeConfig, targets: { phone: { kind: 'mobile', platform: 'android', bundleId: 'com.example.app', description: '' } } } as unknown as Config;
+  const first = await runSuite({ workspace, suite: nativeSuite(), config: missing, targetName: 'phone' });
+  assert.equal(first.report.status, 'blocked');
+  assert.equal(first.report.cases[0]?.attempts.length, 0);
+  assert.match(first.report.cases[0]?.reason ?? '', /explicit device/);
+  const second = await runSuite({ workspace, suite: nativeSuite(), config: nativeConfig, targetName: 'phone', listMobileDevices: async () => [] });
+  assert.equal(second.report.status, 'blocked');
+  assert.equal(second.report.cases[0]?.attempts.length, 0);
+  assert.deepEqual(second.report.target, { name: 'phone', kind: 'mobile', platform: 'android', bundleId: 'com.example.app', device: 'R58N123' });
+  assert.equal(existsSync(path.join(second.runDir, 'e2e.stdout.log')), false);
+});
+
+test('native config binds mobile engine and agent tools to the ready physical device without launching', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const abort = new AbortController();
+  const suiteWithAgent: Suite = { ...nativeSuite(), cases: [{ ...nativeSuite().cases[0]!, steps: [{ type: 'assertAgent', instruction: 'Ready' }] }] };
+  const withAgent: Config = { ...nativeConfig, agent: { baseURL: 'https://model.example/v1', model: 'test-model' } };
+  const inventory = async () => {
+    abort.abort();
+    return [{ platform: 'android', id: 'android:R58N123', name: 'Pixel 9', identifiers: { serial: 'R58N123' }, booted: true }];
+  };
+  const result = await runSuite({ workspace, suite: suiteWithAgent, config: withAgent, targetName: 'phone', signal: abort.signal, listMobileDevices: inventory });
+  assert.equal(result.report.status, 'interrupted');
+  assert.equal(result.report.cases[0]?.attempts.length, 0);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
+  const source = readFileSync(path.join(result.runDir, 'e2e.config.ts'), 'utf8');
+  assert.match(source, /import \{ mobile \} from/);
+  assert.match(source, /import \{ mobileTools \} from/);
+  assert.match(source, /tools: mobileTools\(engine\)/);
+  assert.match(source, /device: "Pixel 9"/);
+  assert.match(source, /bundleId: "com\.example\.app"/);
+  assert.match(source, new RegExp(`session: "${result.report.runId}"`));
+  assert.doesNotMatch(source, /@e2e-dev\/web|web\(\)|url:/);
+
+  const typed = `import type { E2EConfig } from 'e2e';\n${source
+    .replaceAll(import.meta.resolve('@e2e-dev/mobile/tools'), '@e2e-dev/mobile/tools')
+    .replaceAll(import.meta.resolve('@e2e-dev/mobile'), '@e2e-dev/mobile')
+    .replaceAll(import.meta.resolve('@ai-sdk/openai-compatible'), '@ai-sdk/openai-compatible')
+    .replace(/};\s*$/, '} satisfies E2EConfig;')}`;
+  const fileName = path.resolve('tests/.generated-mobile-config.ts');
+  const compilerOptions: ts.CompilerOptions = { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ES2023, strict: true, skipLibCheck: true, noEmit: true, types: ['node'] };
+  const host = ts.createCompilerHost(compilerOptions);
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => name === fileName
+    ? ts.createSourceFile(name, typed, languageVersion, true)
+    : original(name, languageVersion, onError, shouldCreateNewSourceFile);
+  const program = ts.createProgram([fileName], compilerOptions, host);
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
 });

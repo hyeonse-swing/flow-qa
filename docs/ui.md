@@ -1,13 +1,13 @@
 # Flow QA local UI
 
-Use the target app's URL and a user flow to review cases, run them, and inspect results. The local example is a to-do app; the UI does not bundle an organization's product list, internal URLs, accounts, model catalog, work cases, or run history.
+Describe a user flow, review cases, and configure a target when ready to run. Web targets use a URL; native targets use an iOS/Android app ID and an explicit device. Mobile targets require version `0.2.0` or later. The local example is a to-do web app; the UI does not bundle an organization's product list, internal URLs, accounts, model catalog, work cases, or run history.
 
 ## Start
 
-Node.js 24 or later is required. Install Flow QA and start the local demo:
+Node.js 24.8 or later is required. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.1.3
+npm install -g @ihyeon/flow-qa@0.2.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -28,17 +28,17 @@ The UI starts in **English**, regardless of browser language. Switch to **한국
 
 ## Workflow
 
-1. **Connections:** Register a target name and URL. Planner and browser agent models have separate settings.
-2. **Scenario:** Describe the initial state, actions, screen elements, and expected results. If a planner is ready, ask it to create cases. Without a model, download the planning prompt and paste a JSON response from an AI you already use.
+1. **Scenario:** Choose Web or Mobile and describe the initial state, actions, screen elements, and expected results. No target is required yet. If a planner is ready, ask it to create cases. Without a model, download the planning prompt and paste a JSON response from an AI you already use.
+2. **Connections:** When ready, register a target name and web URL, or choose iOS/Android and enter an installed app's bundle/package ID and device. Planner and execution agent models have separate settings. Saving settings does not start an app or model request.
 3. **Review and save cases:** Expand each case to read preconditions, actions, expected results, and unresolved questions. Editing the JSON keeps the linked flow; if that source flow changes, design the cases again. Planning and running are separate actions. Editing inputs or connection settings alone does not call a model.
-4. **Run QA:** Review the saved case file, select a target, and check the review confirmation before running. If the file changes after review, reload and review it again. Fixed steps need no agent model. `act` and `assertAgent` require a compatible agent; missing models and unresolved questions are reported as blocked cases.
+4. **Run QA:** Review the saved case file, select a matching web/mobile target, and check the review confirmation before running. If the file or target settings change after review, reload and review them again. Fixed steps need no agent model. `act` and `assertAgent` require a compatible agent; missing models and unresolved questions are reported as blocked cases.
 5. **Case library and Run history:** Save cases as new files and load them again. Open run details to see each case, attempt, and evidence; download the Markdown or JSON report.
 
 The top bar shows planning, running, and stopping states, plus a cancel button. A late planning response cannot change the draft after cancellation. The UI does not estimate progress inside an individual browser action. If the server disconnects, reconnect; runs started in another tab also appear. Refreshing settings rereads targets and models, so save edits first.
 
 For each attempt, the report can open or download an approved screenshot or text evidence item. It serves only evidence linked to the report and marked as redacted or not needing redaction. It does not serve arbitrary files, raw run logs, HTML, or SVG. Markdown and JSON downloads summarize results but do not include evidence files. Keep the original run directory structure if you need relative evidence links in an offline Markdown report.
 
-**Connections** shows whether Chromium is installed. A model key marked ready means only that the named environment variable exists; it does not prove authentication or model compatibility. Case review shows runnable and pre-blocked counts. Login and target reachability are established only by an actual run.
+**Connections** shows whether Chromium is installed for web targets. Mobile execution requires a prepared device and installed app; Chromium readiness does not determine mobile readiness. See [mobile setup](mobile.md). A model key marked ready means only that the named environment variable exists; it does not prove authentication or model compatibility. Case review shows runnable and pre-blocked counts. Login and target reachability are established only by an actual run.
 
 To enter fresh JSON after changing a scenario, open the JSON editor in case review and choose **New JSON draft**. Existing saved files remain; validate and save the new JSON before reviewing it for a run.
 

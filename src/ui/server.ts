@@ -14,6 +14,7 @@ import { EvidenceError, readEvidence } from './evidence.ts';
 import { buildPlanningPrompt, planFlow, PlannerError } from '../planner.ts';
 import { renderMarkdown, type QAReport } from '../report.ts';
 import { configSchema, idSchema, modelSchema, suiteSchema, targetSchema, type Config, type PlannerConnection, type Suite } from '../schema.ts';
+import { targetFingerprint } from '../targets.ts';
 import { CONFIG_FILE, sha256 } from '../workspace.ts';
 
 const MAX_BODY = 256 * 1024;
@@ -29,7 +30,10 @@ const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const reportEnvelope = z.object({
   schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
-  suiteHash: z.string(), target: z.object({ name: z.string(), url: z.string() }),
+  suiteHash: z.string(), target: z.union([
+    z.object({ name: z.string(), url: z.string() }),
+    z.object({ name: z.string(), kind: z.literal('mobile'), platform: z.enum(['ios', 'android']), bundleId: z.string(), device: z.string() }),
+  ]),
   startedAt: z.string(), finishedAt: z.string(), status: z.enum(['passed', 'failed', 'blocked', 'error', 'interrupted']),
   cases: z.array(z.object({ id: z.string(), title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
     expected: z.array(z.string()), attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
@@ -66,7 +70,8 @@ const SCHEMA_FIELDS = new Set([
   'suite', 'schemaVersion', 'id', 'title', 'source', 'file', 'sha256', 'requirements', 'cases',
   'requirementIds', 'preconditions', 'questions', 'steps', 'type', 'path', 'instruction',
   'locator', 'by', 'value', 'name', 'visible', 'expected', 'match', 'flow', 'role', 'url',
-  'description', 'baseURL', 'model', 'apiKeyEnv', 'clear', 'targetName', 'targetURL', 'suiteHash',
+  'description', 'baseURL', 'model', 'apiKeyEnv', 'clear', 'targetName', 'targetURL', 'targetFingerprint', 'suiteHash',
+  'kind', 'platform', 'bundleId', 'device', 'direction',
 ]);
 const KNOWN_SCHEMA_MESSAGES = new Map([
   ['IDs must be unique.', 'IDs must be unique.'],
@@ -103,7 +108,8 @@ function plannerFailure(error: PlannerError): HTTPError {
   }
   if (error.code === 'invalid-suite') {
     const allowedMessages = new Set(['A JSON object response is required.', 'A runnable case needs an expected-result assertion.',
-      'Check requirement links, duplicate IDs, and assertions.', 'Check required values, types, and limits in the case schema.']);
+      'Check requirement links, duplicate IDs, and assertions.', 'Check required values, types, and limits in the case schema.',
+      'The suite platform must match the selected planning platform.']);
     const allowedPaths = new Set([...SCHEMA_FIELDS, 'response', 'suite', '?']);
     const issues = error.issues?.slice(0, 8).map((issue) => ({
       path: issue.path.split('.').slice(0, 8).every((part) => allowedPaths.has(part) || /^(?:0|[1-9][0-9]?)$/.test(part)) ? issue.path : 'suite',
@@ -166,7 +172,7 @@ export interface UIServerOptions {
   workspace: string;
   port?: number;
   run?: (options: RunSuiteOptions) => Promise<RunSuiteResult>;
-  plan?: (flow: string, model: PlannerConnection, options?: { signal?: AbortSignal }) => Promise<Suite>;
+  plan?: (flow: string, model: PlannerConnection, options?: { signal?: AbortSignal; platform?: 'web' | 'mobile' }) => Promise<Suite>;
   runtime?: () => boolean | Promise<boolean>;
 }
 
@@ -378,7 +384,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         const settings = await config();
         const history = await runs();
         sendJSON(response, 200, { csrfToken: token,
-          targets: Object.entries(settings.targets).map(([name, target]) => ({ name, ...target })),
+          targets: Object.entries(settings.targets).map(([name, target]) => ({ name, ...target, targetFingerprint: targetFingerprint(target) })),
           models: { planner: modelState(settings.planner), agent: modelState(settings.agent) },
           runtime: { browserInstalled: await browserInstalled(), browserInstallCommand: BROWSER_INSTALL_COMMAND },
           suites: await suites(), runs: history,
@@ -445,9 +451,9 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (request.headers['x-flowqa-token'] !== token) throw new HTTPError(403, 'Invalid request token.');
     const body = await bodyJSON(request);
     if (url.pathname === '/api/prompt') {
-      const { flow } = parse(z.object({ flow: z.string().min(1) }).strict(), body);
+      const { flow, platform } = parse(z.object({ flow: z.string().min(1), platform: z.enum(['web', 'mobile']).optional() }).strict(), body);
       if (Buffer.byteLength(flow) > MAX_FLOW) throw new HTTPError(413, 'The flow is too large.');
-      sendJSON(response, 200, { prompt: buildPlanningPrompt(flow) }); return;
+      sendJSON(response, 200, { prompt: buildPlanningPrompt(flow, platform) }); return;
     }
     if (url.pathname === '/api/stop') {
       parse(z.object({}).strict(), body);
@@ -457,7 +463,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     if (url.pathname === '/api/plan') {
       const result = await mutation(async () => {
-        const { flow } = parse(z.object({ flow: z.string().min(1) }).strict(), body);
+        const { flow, platform } = parse(z.object({ flow: z.string().min(1), platform: z.enum(['web', 'mobile']).optional() }).strict(), body);
         if (Buffer.byteLength(flow) > MAX_FLOW) throw new HTTPError(413, 'The flow is too large.');
         const settings = await config();
         if (!settings.planner) throw new HTTPError(409, 'A compatible planner model must be configured.');
@@ -477,13 +483,14 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         timeout.unref();
         try {
           const result = await Promise.race([
-            Promise.resolve().then(() => plan(flow, settings.planner!, { signal: abort.signal })),
+            Promise.resolve().then(() => plan(flow, settings.planner!, { signal: abort.signal, platform })),
             aborted,
           ]);
           if (abort.signal.aborted) throw new HTTPError(timedOut ? 504 : 409, 'Planning was cancelled.', { category: timedOut ? 'timeout' : 'cancelled' });
           const parsed = suiteSchema.safeParse(result);
           if (!parsed.success) throw new HTTPError(502, 'The model returned an invalid suite.', { category: 'invalid-suite' });
           const planned = parsed.data;
+          if ((planned.platform ?? 'web') !== (platform ?? 'web')) throw new HTTPError(502, 'The model returned cases for a different platform.', { category: 'invalid-suite' });
           const { source: _modelSource, ...withoutSource } = planned;
           const suite = suiteSchema.parse(withoutSource);
           return { suite, script: compileSuite(suite) };
@@ -531,8 +538,11 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     if (url.pathname === '/api/targets') {
       await mutation(async () => {
-        const { name, url: targetURL, description } = parse(z.object({ name: idSchema, url: z.string(), description: z.string().optional() }).strict(), body);
-        const target = parse(targetSchema, { url: targetURL, ...(description === undefined ? {} : { description }) });
+        const { name, ...input } = parse(z.union([
+          z.object({ name: idSchema, kind: z.literal('mobile'), platform: z.enum(['ios', 'android']), bundleId: z.string(), device: z.string(), description: z.string().optional() }).strict(),
+          z.object({ name: idSchema, kind: z.literal('web').optional(), url: z.string(), description: z.string().optional() }).strict(),
+        ]), body);
+        const target = parse(targetSchema, input);
         const settings = await config();
         settings.targets[name] = target;
         await updateConfig(settings);
@@ -556,16 +566,23 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (url.pathname === '/api/run') {
       enterMutation();
       try {
-        const { suite: file, suiteHash, targetName, targetURL } = parse(z.object({
-          suite: z.string(), suiteHash: z.string().regex(/^[a-f0-9]{64}$/), targetName: idSchema, targetURL: z.string(),
+        const { suite: file, suiteHash, targetName, targetURL, targetFingerprint: reviewedFingerprint } = parse(z.object({
+          suite: z.string(), suiteHash: z.string().regex(/^[a-f0-9]{64}$/), targetName: idSchema,
+          targetURL: z.string().optional(), targetFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
         }).strict(), body);
         const selected = await getSuite(file, true);
         if (selected.suiteHash !== suiteHash) throw new HTTPError(409, 'The reviewed case file changed. Open it again to review.');
         const { suite } = selected;
         const settings = await config();
-        if (!settings.targets[targetName]) invalid('The selected target was not found.');
-        if (settings.targets[targetName].url !== targetURL) {
-          throw new HTTPError(409, 'The selected target URL changed. Review it again.');
+        const target = settings.targets[targetName];
+        if (!target) invalid('The selected target was not found.');
+        if ((suite.platform ?? 'web') !== (target.kind === 'mobile' ? 'mobile' : 'web')) {
+          throw new HTTPError(409, 'The case platform and selected target do not match. Review them again.');
+        }
+        if (reviewedFingerprint !== undefined) {
+          if (targetFingerprint(target) !== reviewedFingerprint) throw new HTTPError(409, 'The selected target changed. Review it again.');
+        } else if (target.kind === 'mobile' || !targetURL || target.url !== targetURL) {
+          throw new HTTPError(409, 'The selected target changed. Review it again.');
         }
         const operationId = randomUUID();
         const abort = new AbortController();

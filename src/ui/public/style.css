@@ -148,7 +148,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .preferences-section .hds-group { padding-block: calc(var(--space-factor) * 22px); }
 .settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(25px, 3vw, 44px); }
 .form-stack, .model-form { display: grid; gap: calc(var(--space-factor) * 15px); }
-.form-stack label input, .form-stack label textarea, .model-form label input { margin-top: 8px; }
+.form-stack label input, .form-stack label select, .form-stack label textarea, .model-form label input { margin-top: 8px; }
 .form-stack > button { justify-self: start; }
 .settings-list { margin-top: 11px; border-top: 1px solid var(--line); }
 .settings-list:empty { display: none; }

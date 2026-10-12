@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import path from 'node:path';
 import ts from 'typescript';
 import { compileSuite, expectedChecks, needsAgent } from '../src/compiler.ts';
 import type { Suite } from '../src/schema.ts';
@@ -67,4 +68,43 @@ test('descriptive preconditions run when steps establish them; questions block',
 
 test('compiler rejects malformed suite data before code generation', () => {
   assert.throws(() => compileSuite({ ...suite, schemaVersion: 'invalid' } as unknown as Suite));
+});
+
+test('native compiler emits escaped mobile actions without a browser fixture and typechecks against the SDK', () => {
+  const native: Suite = { ...suite, platform: 'mobile', cases: [{ ...suite.cases[0]!, steps: [
+    { type: 'launchApp' }, { type: 'swipe', direction: 'up' }, { type: 'back' },
+    { type: 'fill', locator: { by: 'label', value: hostile }, value: hostile },
+    { type: 'click', locator: { by: 'role', value: 'button', name: hostile } },
+    { type: 'assertVisible', locator: { by: 'text', value: hostile }, visible: false },
+    { type: 'assertText', locator: { by: 'testId', value: hostile }, expected: hostile, match: 'contains' },
+    { type: 'act', instruction: hostile }, { type: 'assertAgent', instruction: hostile },
+  ] }] };
+  const output = compileSuite(native);
+  assert.match(output, /import \{ test \} from '@e2e-dev\/mobile';/);
+  assert.doesNotMatch(output, /@e2e-dev\/web|\bbrowser\b|toHaveURL/);
+  assert.ok(output.includes(`test(${JSON.stringify(`[CASE-1] ${hostile}`)}, async ({ app, screen, agent }) => {`));
+  assert.equal(output.match(/await app\.open\(\)/g)?.length, 1);
+  assert.match(output, /await app\.back\(\)/);
+  assert.match(output, /await screen\.swipe\(\{ direction: "up" \}\)/);
+  assert.ok(output.includes(`screen.getByLabel(${JSON.stringify(hostile)}).fill(${JSON.stringify(hostile)})`));
+  assert.ok(output.includes(`agent.act(${JSON.stringify(hostile)})`));
+  const fileName = path.resolve('tests/.generated-mobile-suite.ts');
+  const options: ts.CompilerOptions = { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ES2023, strict: true, skipLibCheck: true, noEmit: true, types: ['node'] };
+  const host = ts.createCompilerHost(options);
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => name === fileName
+    ? ts.createSourceFile(name, output, languageVersion, true)
+    : original(name, languageVersion, onError, shouldCreateNewSourceFile);
+  const program = ts.createProgram([fileName], options, host);
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
+});
+
+test('native compiler launches the pinned app when the first step is not launchApp', () => {
+  const native: Suite = { ...suite, platform: 'mobile', cases: [{ ...suite.cases[0]!, steps: [
+    { type: 'swipe', direction: 'left' }, { type: 'assertAgent', instruction: 'Page changed' },
+  ] }] };
+  const output = compileSuite(native);
+  assert.match(output, /async \(\{ app, screen, agent \}\) => \{\n  await app\.open\(\);\n  await screen\.swipe/);
+  assert.equal(output.match(/await app\.open\(\)/g)?.length, 1);
 });

@@ -11,7 +11,9 @@ test('init yields a runnable example and never overwrites existing user files', 
   try {
     const created = await initWorkspace(dir);
     assert.equal(created.length, 5);
-    assert.equal((await readConfig(dir)).targets.demo?.url, 'http://127.0.0.1:4178');
+    const target = (await readConfig(dir)).targets.demo;
+    assert.ok(target && target.kind !== 'mobile');
+    assert.equal(target.url, 'http://127.0.0.1:4178');
     assert.equal((await readSuite(join(dir, 'cases/task-flow.json'))).cases.length, 3);
     const suite = await readSuite(join(dir, 'cases/task-flow.json'));
     await verifySuiteSource(suite, dir);

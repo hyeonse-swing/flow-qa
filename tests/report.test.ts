@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { normalizeReport1, renderMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
+import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
 
 const suite: Suite = {
@@ -61,6 +61,33 @@ test('retains failed and flaky attempts, blocked questions, usage, and only safe
   assert.match(markdown, /raw\/artifacts\/good.png/);
   assert.doesNotMatch(markdown, /outside\.png|evil\.example|token=secret/);
   assert.equal(report.cases[0]?.attempts[0]?.artifacts.filter((item) => item.path).length, 1);
+  assert.match(markdown, /URL available in the local JSON report/);
+});
+
+test('mobile target identity survives normalized and failure reports without a fabricated URL', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const mobileContext: ReportContext = {
+    ...context(root),
+    target: { name: 'local', kind: 'mobile', platform: 'ios', bundleId: 'kr.example.checkout', device: 'iPhone 17' },
+  };
+  const normalized = normalizeReport1(raw([
+    result('A', 'failed', [attempt(0, 'failed')]),
+    result('B', 'passed', [attempt(0, 'passed')]),
+    result('C', 'skipped', []),
+  ]), mobileContext);
+  assert.deepEqual(normalized.target, mobileContext.target);
+  assert.equal(normalized.cases[0]?.status, 'failed');
+  const markdown = renderMarkdown(normalized);
+  assert.ok(markdown.includes('kr\\.example\\.checkout'));
+  assert.match(markdown, /iPhone 17/);
+  assert.match(markdown, /ios/i);
+  assert.doesNotMatch(markdown, /URL available in the local JSON report|https?:\/\//);
+
+  const failure = failureReport(mobileContext, 'blocked', 'Device unavailable');
+  assert.deepEqual(failure.target, mobileContext.target);
+  assert.equal(failure.status, 'blocked');
+  assert.ok(renderMarkdown(failure).includes('kr\\.example\\.checkout'));
+  assert.match(renderMarkdown(failure), /iPhone 17/);
 });
 
 test('missing case cannot pass and unsupported, mismatched, or malformed statuses fail closed', () => {

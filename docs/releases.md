@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.0: configurable mobile targets
+
+Adds native iOS/Android target settings, mobile case authoring before device setup, platform-aware compilation and execution, and app/device identity in review and reports. Users register an installed app and a prepared device when ready; no product-specific app is bundled. Existing web settings and suites remain readable. Node.js 24.8 or later is required by the mobile runtime. Actual native-device success requires a user-selected app and device. See [mobile setup and verification limits](mobile.md).
+
+Locally verified on macOS with Node.js 24.14.1 on 2026-10-12: 89 tests, type checking, UI syntax and design-system audit, package build and fresh tarball installation. Chromium smoke preserved web pass/failure/unavailable classifications and English/Korean UI behavior. The installed package can create a mobile prompt, validate and compile mobile cases before target setup, and save iOS/Android settings. Native generated code was type-checked against the installed SDK; device selection and blocking were tested with inventory fixtures. These checks did not execute a native app or call a model.
+
+- Package: [`@ihyeon/flow-qa@0.2.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.0)
+- Release: [GitHub 0.2.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.0)
+
 ## Automated npm and GitHub releases
 
 A push to `main` publishes only when `package.json` changes to a new plain `X.Y.Z` version. Pull requests and pushes without a version change run verification without publishing. The package and lockfile versions must agree; the version must increase, and registry errors stop the release. Rerunning a successful publication skips the existing immutable npm version.
