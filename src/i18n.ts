@@ -58,6 +58,8 @@ const koreanMessages: Record<string, string> = {
   'Could not read the Flow QA configuration.': 'Flow QA 설정을 읽을 수 없습니다.',
   'Invalid configuration file path.': '설정 파일 경로가 올바르지 않습니다.',
   'The source flow changed. Save the cases again.': '원본 플로우가 변경됐습니다. 케이스를 다시 저장하세요.',
+  'Select the source Markdown together with the case JSON.': '케이스 JSON과 원본 Markdown을 함께 선택하세요.',
+  'The selected Markdown does not match the case source.': '선택한 Markdown이 케이스의 원본과 일치하지 않습니다.',
   'Invalid run ID.': '실행 ID가 올바르지 않습니다.',
   'The UI server is shutting down.': 'UI 서버가 종료 중입니다.',
   'Another operation is in progress.': '다른 작업이 진행 중입니다.',

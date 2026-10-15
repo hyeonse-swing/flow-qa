@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.8 or later is required. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.0
+npm install -g @ihyeon/flow-qa@0.2.1
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -41,6 +41,14 @@ For each attempt, the report can open or download an approved screenshot or text
 **Connections** shows whether Chromium is installed for web targets. Mobile execution requires a prepared device and installed app; Chromium readiness does not determine mobile readiness. See [mobile setup](mobile.md). A model key marked ready means only that the named environment variable exists; it does not prove authentication or model compatibility. Case review shows runnable and pre-blocked counts. Login and target reachability are established only by an actual run.
 
 To enter fresh JSON after changing a scenario, open the JSON editor in case review and choose **New JSON draft**. Existing saved files remain; validate and save the new JSON before reviewing it for a run.
+
+### Import existing case files
+
+From version `0.2.1`, select a `flow-qa/suite-1` JSON file and, when it declares a source, its Markdown file in case review, then choose **Import case files**. The two file controls let you select files from different folders. For an error-to-test export, select `cases/error-to-test.json` and `flows/error-to-test.md`. A JSON file without a source can be imported alone or with a Markdown file.
+
+Import validates the suite and checks the selected Markdown against its declared SHA-256 before replacing the draft. Cancelling or selecting invalid files preserves the current draft. The Markdown text, including line endings and trailing whitespace, is retained for saving. Markdown is limited to 128 KiB; the combined JSON request is limited to 256 KiB.
+
+This creates an unsaved review copy. Choose **Save cases separately**, review the cases, and confirm review before running. Unresolved questions remain blocked. Saving assigns a new workspace source path and hash; it does not overwrite the input files or import `provenance.json`. If you need error-to-test `verify` / `link-run` provenance, keep the original bundle and use its original suite instead of this saved copy.
 
 ## Display and language
 

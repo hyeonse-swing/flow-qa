@@ -75,6 +75,9 @@
     $('plan-btn').disabled = !app.connected || !app.state?.models?.planner?.configured || app.state.models.planner.kind !== 'openai-compatible' || !app.state.models.planner.keyReady || !!active || app.busy;
     $('compile-btn').disabled = app.stale || app.busy;
     $('new-draft-btn').disabled = app.busy;
+    $('import-btn').disabled = app.busy;
+    $('import-json').disabled = app.busy;
+    $('import-markdown').disabled = app.busy;
     $('flow-input').disabled = app.busy;
     $('suite-editor').disabled = app.busy;
     $('prompt-btn').disabled = app.busy;
@@ -95,7 +98,7 @@
     const pill = $('draft-status');
     pill.textContent = t(app.stale ? 'app.regenerate' : app.dirty ? 'app.revalidate' : ready ? 'app.validated' : 'scenario.noDraft');
     pill.className = 'status-pill' + (ready ? ' ready' : app.stale || app.dirty ? ' dirty' : '');
-    $('draft-source').textContent = t(app.origin === 'generated' ? 'app.sourceGenerated' : app.origin === 'library' ? (app.sourceFlow ? 'app.sourceLibraryFlow' : 'app.sourceLibrary') : app.origin === 'manual' ? (app.sourceFlow ? 'app.sourceManualFlow' : 'app.sourceManual') : 'scenario.sourceNone');
+    $('draft-source').textContent = t(app.origin === 'generated' ? 'app.sourceGenerated' : app.origin === 'library' ? (app.sourceFlow ? 'app.sourceLibraryFlow' : 'app.sourceLibrary') : app.origin === 'imported' ? (app.sourceFlow ? 'app.sourceImportedFlow' : 'app.sourceImported') : app.origin === 'manual' ? (app.sourceFlow ? 'app.sourceManualFlow' : 'app.sourceManual') : 'scenario.sourceNone');
     $('script-preview').textContent = ready ? app.script : t('scenario.scriptPlaceholder');
   }
   function locatorText(locator) {
@@ -249,6 +252,28 @@
     finally { app.planning = false; await refresh(false).catch(() => {}); }
   }); }
   async function prompt() { await work(async () => { const flow = $('flow-input').value.trim(); if (!flow) throw localizedError('app.enterFlow'); const result = await api('/api/prompt', { flow, platform: $('scenario-platform').value }); download('flow-qa-prompt.md', result.prompt, 'text/markdown'); noticeKey('app.promptDownloaded'); }); }
+  function editableFlow(flow) { return flow.replace(/\r\n?/g, '\n'); }
+  async function importFiles() {
+    const files = [...$('import-json').files, ...$('import-markdown').files];
+    let imported = false;
+    await work(async () => {
+      const jsonFiles = files.filter((file) => file.name.toLowerCase().endsWith('.json'));
+      const markdownFiles = files.filter((file) => file.name.toLowerCase().endsWith('.md'));
+      if (files.length > 2 || jsonFiles.length !== 1 || markdownFiles.length > 1 || jsonFiles.length + markdownFiles.length !== files.length) throw localizedError('app.importSelection');
+      if (jsonFiles[0].size > 256 * 1024 || (markdownFiles[0] && markdownFiles[0].size > 128 * 1024)) throw localizedError('app.importTooLarge');
+      let suite;
+      try { suite = JSON.parse(await jsonFiles[0].text()); } catch { throw localizedError('app.invalidJson'); }
+      const flow = markdownFiles[0] ? await markdownFiles[0].text() : undefined;
+      const body = { suite, ...(flow === undefined ? {} : { flow }) };
+      if (new TextEncoder().encode(JSON.stringify(body)).byteLength > 256 * 1024) throw localizedError('app.importTooLarge');
+      const result = await api('/api/import', body);
+      $('flow-input').value = flow || '';
+      setDraft(result.suite, result.script, 'imported', flow || '');
+      noticeKey('app.importComplete');
+      imported = true;
+    });
+    if (imported) { $('import-json').value = ''; $('import-markdown').value = ''; }
+  }
   async function compile() { await work(async () => {
     if (app.stale) throw localizedError('app.compileStale');
     let suite; try { suite = JSON.parse($('suite-editor').value); } catch { throw localizedError('app.invalidJson'); }
@@ -261,7 +286,7 @@
     setDraft(result.suite, result.script, app.origin === 'none' ? 'manual' : app.origin, sourceFlow, app.dirty ? '' : app.savedFile, app.dirty ? '' : app.savedHash);
     noticeKey('app.compileComplete');
   }); }
-  async function save() { await work(async () => { if (!app.draft || app.dirty || app.stale) throw localizedError('app.needValidated'); const body = { suite: app.draft }; if (!app.boundSource && app.sourceFlow && app.sourceFlow === $('flow-input').value.trim()) body.flow = app.sourceFlow; const result = await api('/api/save', body); const saved = await api(`/api/suite?file=${encodeURIComponent(result.file)}`); $('flow-input').value = saved.flow || ''; setDraft(saved.suite, saved.script, 'library', saved.flow || '', result.file, saved.suiteHash || ''); noticeKey('app.savedSuite', { file: result.file }); await refresh(false); }); }
+  async function save() { await work(async () => { if (!app.draft || app.dirty || app.stale) throw localizedError('app.needValidated'); const body = { suite: app.draft }; if (!app.boundSource && app.sourceFlow && (app.origin === 'imported' ? editableFlow(app.sourceFlow) === $('flow-input').value : app.sourceFlow === $('flow-input').value.trim())) body.flow = app.sourceFlow; const result = await api('/api/save', body); const saved = await api(`/api/suite?file=${encodeURIComponent(result.file)}`); $('flow-input').value = saved.flow || ''; setDraft(saved.suite, saved.script, 'library', saved.flow || '', result.file, saved.suiteHash || ''); noticeKey('app.savedSuite', { file: result.file }); await refresh(false); }); }
   async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !$('review-checkbox').checked || !compatibleTarget()) throw localizedError('app.runNotReady'); const target = selectedTarget(); const result = await api('/api/run', { suite: app.savedFile, suiteHash: app.savedHash, targetName: target.name, targetFingerprint: target.targetFingerprint }); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
   async function stop() {
     if (app.stopping || !app.state?.active) return;
@@ -355,11 +380,12 @@
       noticeKey('app.newDraftNotice');
       $('suite-editor').focus();
     });
-    $('flow-input').addEventListener('input', () => { if ((app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== app.sourceFlow.trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; readiness(); } });
+    $('flow-input').addEventListener('input', () => { if (app.origin === 'imported' ? $('flow-input').value !== editableFlow(app.sourceFlow) : (app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== editableFlow(app.sourceFlow).trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; readiness(); } });
     $('scenario-platform').addEventListener('change', () => { app.planRequest += 1; if (app.draft) { app.stale = true; app.savedHash = ''; } $('review-checkbox').checked = false; readiness(); });
     $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
     $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; targetDescription(); });
     $('plan-btn').addEventListener('click', generate); $('prompt-btn').addEventListener('click', prompt); $('compile-btn').addEventListener('click', compile); $('save-btn').addEventListener('click', save); $('run-btn').addEventListener('click', run); $('stop-btn').addEventListener('click', stop);
+    $('import-btn').addEventListener('click', importFiles);
     $('global-stop-btn').addEventListener('click', stop);
     $('reconnect-btn').addEventListener('click', () => refresh(true).catch(showError));
     $('script-download').addEventListener('click', () => { if (app.draft && !app.dirty && !app.stale) download(`${app.draft.id || 'flow-qa'}.test.mjs`, app.script, 'text/javascript'); });

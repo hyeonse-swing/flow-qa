@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ import { failureReport, renderMarkdown } from '../src/report.ts';
 import { targetFingerprint } from '../src/targets.ts';
 import type { Config, Suite } from '../src/schema.ts';
 import { startUIServer, type UIServerHandle } from '../src/ui/server.ts';
-import { initWorkspace, readConfig, readSuite } from '../src/workspace.ts';
+import { initWorkspace, readConfig, readSuite, sha256 } from '../src/workspace.ts';
 
 async function fixture(options: Parameters<typeof startUIServer>[0] = { workspace: '' }) {
   const workspace = await mkdtemp(path.join(tmpdir(), 'flowqa-ui-'));
@@ -202,6 +202,63 @@ test('suite read, compile and save keep provenance inside regular flows and crea
       await symlink(path.join(outside, 'secret.md'), path.join(app.workspace, 'cases', 'linked.json'));
       assert.equal((await fetch(`${app.server.url}/api/suite?file=linked.json`)).status, 404);
     } finally { await rm(outside, { recursive: true, force: true }); }
+  } finally { await app.close(); }
+});
+
+test('file import verifies external source bytes and prepares an unsaved copy with review questions intact', async () => {
+  const app = await fixture();
+  try {
+    const original = await readSuite(path.join(app.workspace, 'cases/task-flow.json'));
+    const flow = '  # Imported flow\r\n\r\n한국어 원본\r\n';
+    const suite: Suite = { ...original, source: { file: 'flows/external.md', sha256: sha256(flow) },
+      cases: original.cases.map(item => ({ ...item, questions: ['Review the expected result.'] })) };
+    const filesBefore = await Promise.all(['cases', 'flows'].map(dir => readdir(path.join(app.workspace, dir))));
+    const response = await post(app.server, app.token, '/api/import', { suite, flow });
+    assert.equal(response.status, 200);
+    const imported = await response.json() as { suite: Suite; script: string };
+    const { source: _source, ...expected } = suite;
+    assert.deepEqual(imported.suite, expected);
+    assert.equal(imported.script.match(/test\.skip\(/g)?.length, suite.cases.length);
+    assert.deepEqual(await Promise.all(['cases', 'flows'].map(dir => readdir(path.join(app.workspace, dir)))), filesBefore);
+
+    const saved = await (await post(app.server, app.token, '/api/save', { suite: imported.suite, flow })).json() as { file: string };
+    const savedSuite = await readSuite(path.join(app.workspace, 'cases', saved.file));
+    assert.notEqual(savedSuite.source?.file, suite.source?.file);
+    assert.equal(savedSuite.source?.sha256, sha256(flow));
+    assert.equal(await readFile(path.join(app.workspace, savedSuite.source!.file), 'utf8'), flow);
+    assert.deepEqual(savedSuite.cases, suite.cases);
+    assert.deepEqual(await readSuite(path.join(app.workspace, 'cases/task-flow.json')), original);
+  } finally { await app.close(); }
+});
+
+test('file import rejects missing or mismatched source, invalid schema, unsafe paths and excessive input', async () => {
+  const app = await fixture();
+  try {
+    const suite = await readSuite(path.join(app.workspace, 'cases/task-flow.json'));
+    assert.equal((await post(app.server, 'wrong', '/api/import', { suite })).status, 403);
+    assert.equal((await post(app.server, app.token, '/api/import', { suite })).status, 400);
+    const mismatch = await fetch(`${app.server.url}/api/import`, { method: 'POST', headers: {
+      'content-type': 'application/json', 'x-flowqa-token': app.token, 'accept-language': 'ko',
+    }, body: JSON.stringify({ suite, flow: 'changed' }) });
+    assert.equal(mismatch.status, 409);
+    assert.match((await mismatch.json() as { error: string }).error, /원본과 일치하지 않습니다/);
+    assert.equal((await post(app.server, app.token, '/api/import', { suite: { ...suite, cases: [] } })).status, 400);
+    assert.equal((await post(app.server, app.token, '/api/import', { suite: { ...suite, source: { file: '../outside.md', sha256: sha256('flow') } }, flow: 'flow' })).status, 400);
+    assert.equal((await post(app.server, app.token, '/api/import', { suite, flow: 'x'.repeat(128 * 1024 + 1) })).status, 413);
+    assert.equal((await post(app.server, app.token, '/api/import', { suite, flow: 'x'.repeat(256 * 1024) })).status, 413);
+    assert.equal((await state(app.server)).suites.length, 1);
+  } finally { await app.close(); }
+});
+
+test('file import accepts source-less JSON with or without optional Markdown', async () => {
+  const app = await fixture();
+  try {
+    const { source: _source, ...suite } = await readSuite(path.join(app.workspace, 'cases/task-flow.json'));
+    for (const body of [{ suite }, { suite, flow: '# New source\n' }]) {
+      const response = await post(app.server, app.token, '/api/import', body);
+      assert.equal(response.status, 200);
+      assert.deepEqual((await response.json() as { suite: Suite }).suite, suite);
+    }
   } finally { await app.close(); }
 });
 

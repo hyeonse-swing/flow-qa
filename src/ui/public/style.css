@@ -108,6 +108,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .blocked-title { margin-top: 21px !important; color: var(--accent-text); }
 .draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: calc(var(--space-factor) * 16px) 0; }
 .draft-actions span { color: var(--muted); font-size: 12px; }
+.import-actions label { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.import-actions input { min-width: 0; max-width: 100%; }
 .technical-details { border-top: 1px solid var(--line); }
 .technical-details > summary { display: flex; justify-content: space-between; gap: 10px; padding: 15px 0; color: var(--ink); font-size: 13px; font-weight: 750; cursor: pointer; list-style: none; }
 .technical-details > summary::-webkit-details-marker { display: none; }

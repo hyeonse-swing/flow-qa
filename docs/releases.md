@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.1: import case files from the UI
+
+Adds a file picker for a TC JSON file and its optional source Markdown. Import checks the suite and source hash before replacing the current draft, preserves unresolved review questions, and creates a separate copy when saved. Source text retains its line endings and trailing whitespace. This does not import error-to-test provenance metadata; original bundles remain separate. See [case file import](ui.md#import-existing-case-files).
+
+Locally verified on macOS with Node.js 24.14.1 on 2026-10-15: 92 tests, type checking, UI syntax and design-system audit, real Chromium import/save/retry checks in English and Korean, existing demo pass/failure/blocked classifications, and a fresh tarball install with three passing browser cases. No model calls or native-device runs were used for this patch.
+
+- Package: [`@ihyeon/flow-qa@0.2.1`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.1)
+- Release: [GitHub 0.2.1](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.1)
+
 ## 0.2.0: configurable mobile targets
 
 Adds native iOS/Android target settings, mobile case authoring before device setup, platform-aware compilation and execution, and app/device identity in review and reports. Users register an installed app and a prepared device when ready; no product-specific app is bundled. Existing web settings and suites remain readable. Node.js 24.8 or later is required by the mobile runtime. Actual native-device success requires a user-selected app and device. See [mobile setup and verification limits](mobile.md).

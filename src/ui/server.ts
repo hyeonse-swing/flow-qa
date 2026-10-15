@@ -507,6 +507,21 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
       });
       sendJSON(response, 200, result); return;
     }
+    if (url.pathname === '/api/import') {
+      const result = await mutation(async () => {
+        const { suite: inputSuite, flow } = parse(z.object({ suite: suiteSchema, flow: z.string().min(1).optional() }).strict(), body);
+        if (flow !== undefined && Buffer.byteLength(flow) > MAX_FLOW) throw new HTTPError(413, 'The flow is too large.');
+        sourceName(inputSuite);
+        if (inputSuite.source) {
+          if (flow === undefined) invalid('Select the source Markdown together with the case JSON.');
+          if (sha256(flow) !== inputSuite.source.sha256) throw new HTTPError(409, 'The selected Markdown does not match the case source.');
+        }
+        // Import prepares a review copy; saving later assigns its workspace source path.
+        const { source: _source, ...suite } = inputSuite;
+        return { suite, script: compileSuite(suite) };
+      });
+      sendJSON(response, 200, result); return;
+    }
     if (url.pathname === '/api/compile') {
       const result = await mutation(async () => {
         const { suite } = parse(z.object({ suite: suiteSchema }).strict(), body);
