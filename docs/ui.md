@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.8 or later is required. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.1
+npm install -g @ihyeon/flow-qa@0.2.2
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -41,6 +41,8 @@ For each attempt, the report can open or download an approved screenshot or text
 **Connections** shows whether Chromium is installed for web targets. Mobile execution requires a prepared device and installed app; Chromium readiness does not determine mobile readiness. See [mobile setup](mobile.md). A model key marked ready means only that the named environment variable exists; it does not prove authentication or model compatibility. Case review shows runnable and pre-blocked counts. Login and target reachability are established only by an actual run.
 
 To enter fresh JSON after changing a scenario, open the JSON editor in case review and choose **New JSON draft**. Existing saved files remain; validate and save the new JSON before reviewing it for a run.
+
+From version `0.2.2`, the UI requests the browser's leave-page confirmation when refreshing or closing a tab with an unsaved scenario or case draft. Unchanged saved cases do not trigger it; saving clears the warning. Choose to stay on the page to keep editing. The browser controls the prompt wording and availability. This is not automatic saving, and it does not guard actions within the UI that replace the draft.
 
 ### Import existing case files
 

@@ -253,6 +253,19 @@
   }); }
   async function prompt() { await work(async () => { const flow = $('flow-input').value.trim(); if (!flow) throw localizedError('app.enterFlow'); const result = await api('/api/prompt', { flow, platform: $('scenario-platform').value }); download('flow-qa-prompt.md', result.prompt, 'text/markdown'); noticeKey('app.promptDownloaded'); }); }
   function editableFlow(flow) { return flow.replace(/\r\n?/g, '\n'); }
+  function hasUnsavedScenario() {
+    const flow = $('flow-input').value;
+    const suite = $('suite-editor').value;
+    if (!app.savedFile) return !!(flow.trim() || suite.trim());
+    return flow !== editableFlow(app.sourceFlow)
+      || suite !== JSON.stringify(app.draft, null, 2)
+      || $('scenario-platform').value !== suitePlatform();
+  }
+  function warnBeforeUnload(event) {
+    if (!hasUnsavedScenario()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
   async function importFiles() {
     const files = [...$('import-json').files, ...$('import-markdown').files];
     let imported = false;
@@ -368,6 +381,7 @@
     else if (!$('notice').hidden) notice(''); // A server error has no stable code to translate; the next request uses the selected language.
   }
   function wire() {
+    window.addEventListener('beforeunload', warnBeforeUnload);
     document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => view(button.dataset.view)));
     $('nav-toggle').addEventListener('click', () => { const open = $('sidebar').classList.toggle('nav-open'); $('nav-toggle').setAttribute('aria-expanded', String(open)); });
     $('library-shortcut').addEventListener('click', () => view('library'));

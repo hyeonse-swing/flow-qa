@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.2: warn before leaving an unsaved draft
+
+Requests the browser's confirmation before a refresh or tab close would discard an unsaved scenario or TC draft. Imported and manually edited cases are covered, including scenario edits to a saved case without a linked source. Unchanged saved cases stay quiet, and successful saving clears the warning. The browser controls the prompt; this does not add automatic saving or change review and execution gates.
+
+Locally verified on macOS with Node.js 24.14.1 on 2026-10-20: 92 tests, type checking, UI syntax and design-system audit, a real Chromium reload prompt that preserves input when dismissed, clean/saved/imported/edited draft checks, existing browser and UI smoke tests, and a fresh tarball install with three passing browser cases. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.2`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.2)
+- Release: [GitHub 0.2.2](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.2)
+
 ## 0.2.1: import case files from the UI
 
 Adds a file picker for a TC JSON file and its optional source Markdown. Import checks the suite and source hash before replacing the current draft, preserves unresolved review questions, and creates a separate copy when saved. Source text retains its line endings and trailing whitespace. This does not import error-to-test provenance metadata; original bundles remain separate. See [case file import](ui.md#import-existing-case-files).
