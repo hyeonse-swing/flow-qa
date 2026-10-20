@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.3: download saved case files
+
+Adds separate case JSON and source Markdown download buttons to case review. Saved cases can be reused without finding workspace files manually; source-less cases offer JSON only. Unsaved or outdated drafts are excluded. The source text and hash remain compatible with file import, while existing save, review, and execution gates stay in place.
+
+Locally verified on macOS with Node.js 24.14.1 on 2026-10-20: 92 tests, type checking, UI syntax and design-system audit, real Chromium downloads and re-import with unchanged source hashes, JSON-only downloads for source-less cases, disabled controls for unsaved edits, and a fresh package install with three passing browser cases. Existing demo pass/failure/blocked classifications and English/Korean UI checks passed without model calls.
+
+- Package: [`@ihyeon/flow-qa@0.2.3`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.3)
+- Release: [GitHub 0.2.3](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.3)
+
 ## 0.2.2: warn before leaving an unsaved draft
 
 Requests the browser's confirmation before a refresh or tab close would discard an unsaved scenario or TC draft. Imported and manually edited cases are covered, including scenario edits to a saved case without a linked source. Unchanged saved cases stay quiet, and successful saving clears the warning. The browser controls the prompt; this does not add automatic saving or change review and execution gates.

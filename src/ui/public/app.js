@@ -61,11 +61,17 @@
   function targetLabel(target) { return target?.kind === 'mobile' ? `${target.platform === 'ios' ? 'iOS' : 'Android'} · ${target.bundleId} · ${target.device}` : target?.url || ''; }
   function targetDisplay(target) { return `${target?.name || t('app.noTarget')} · ${targetLabel(target)}`; }
   function compatibleTarget() { const target = selectedTarget(); return target && targetPlatform(target) === suitePlatform(); }
+  function canDownloadSavedCases() {
+    return Boolean(app.draft && app.script && app.savedFile && app.savedHash && !app.dirty && !app.stale && !app.busy && !hasUnsavedScenario());
+  }
+  function canDownloadSourceMarkdown() { return canDownloadSavedCases() && Boolean(app.draft.source); }
   function readiness() {
     const active = app.state?.active;
     const ready = !!app.draft && !!app.script && !app.stale && !app.dirty;
     $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !$('review-checkbox').checked || !compatibleTarget() || !!active || app.busy;
     $('save-btn').disabled = !ready || app.busy;
+    $('suite-download').disabled = !canDownloadSavedCases();
+    $('flow-download').disabled = !canDownloadSourceMarkdown();
     $('script-download').disabled = !ready;
     for (const id of ['stop-btn', 'global-stop-btn']) {
       $(id).hidden = !active;
@@ -394,7 +400,7 @@
       noticeKey('app.newDraftNotice');
       $('suite-editor').focus();
     });
-    $('flow-input').addEventListener('input', () => { if (app.origin === 'imported' ? $('flow-input').value !== editableFlow(app.sourceFlow) : (app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== editableFlow(app.sourceFlow).trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; readiness(); } });
+    $('flow-input').addEventListener('input', () => { if (app.origin === 'imported' ? $('flow-input').value !== editableFlow(app.sourceFlow) : (app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== editableFlow(app.sourceFlow).trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; } readiness(); });
     $('scenario-platform').addEventListener('change', () => { app.planRequest += 1; if (app.draft) { app.stale = true; app.savedHash = ''; } $('review-checkbox').checked = false; readiness(); });
     $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
     $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; targetDescription(); });
@@ -402,6 +408,8 @@
     $('import-btn').addEventListener('click', importFiles);
     $('global-stop-btn').addEventListener('click', stop);
     $('reconnect-btn').addEventListener('click', () => refresh(true).catch(showError));
+    $('suite-download').addEventListener('click', () => { if (canDownloadSavedCases()) download(app.savedFile, `${JSON.stringify(app.draft, null, 2)}\n`, 'application/json'); });
+    $('flow-download').addEventListener('click', () => { if (canDownloadSourceMarkdown()) download(app.draft.source.file.split('/').pop(), app.sourceFlow, 'text/markdown'); });
     $('script-download').addEventListener('click', () => { if (app.draft && !app.dirty && !app.stale) download(`${app.draft.id || 'flow-qa'}.test.mjs`, app.script, 'text/javascript'); });
     $('report-md').addEventListener('click', downloadReportMarkdown);
     $('report-json').addEventListener('click', () => { if (app.report) download(`${app.selectedRun}.json`, JSON.stringify(app.report, null, 2), 'application/json'); });

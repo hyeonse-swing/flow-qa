@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.8 or later is required. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.2
+npm install -g @ihyeon/flow-qa@0.2.3
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -51,6 +51,12 @@ From version `0.2.1`, select a `flow-qa/suite-1` JSON file and, when it declares
 Import validates the suite and checks the selected Markdown against its declared SHA-256 before replacing the draft. Cancelling or selecting invalid files preserves the current draft. The Markdown text, including line endings and trailing whitespace, is retained for saving. Markdown is limited to 128 KiB; the combined JSON request is limited to 256 KiB.
 
 This creates an unsaved review copy. Choose **Save cases separately**, review the cases, and confirm review before running. Unresolved questions remain blocked. Saving assigns a new workspace source path and hash; it does not overwrite the input files or import `provenance.json`. If you need error-to-test `verify` / `link-run` provenance, keep the original bundle and use its original suite instead of this saved copy.
+
+### Download saved cases
+
+From version `0.2.3`, case review offers **Download case JSON** and **Download source Markdown** for the saved case currently shown. Save or reload the case first; unsaved or outdated drafts cannot be downloaded with these controls. A case without a linked source offers JSON only. Downloading needs no run target or execution review confirmation and does not change either.
+
+The JSON keeps the case content and source reference. The Markdown retains its exact text, line endings, and trailing whitespace so its SHA-256 still matches. Select both downloaded files through **Import case files** to reuse them in another workspace, then save and review the new copy before running. These downloads contain the case and source, not run reports or an error-to-test provenance bundle.
 
 ## Display and language
 
