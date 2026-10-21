@@ -36,6 +36,25 @@ try {
     const file = await event;
     return { name: file.suggestedFilename(), text: await readFile(await file.path(), 'utf8') };
   };
+  const confirmReplacement = async (action, accept, message = /unsaved/i) => {
+    const dialogEvent = page.waitForEvent('dialog', { timeout: 5_000 });
+    const pending = action();
+    const dialog = await dialogEvent;
+    const type = dialog.type();
+    const text = dialog.message();
+    if (accept) await dialog.accept(); else await dialog.dismiss();
+    await pending;
+    assert.equal(type, 'confirm');
+    assert.match(text, message);
+    await page.waitForFunction(() => !document.querySelector('#flow-input').disabled);
+  };
+  const withoutConfirmation = async (action) => {
+    const dialogs = [];
+    const dismiss = dialog => { dialogs.push(dialog.message()); void dialog.dismiss(); };
+    page.on('dialog', dismiss);
+    try { await action(); } finally { page.off('dialog', dismiss); }
+    assert.deepEqual(dialogs, [], 'This action must not ask to discard changes.');
+  };
   await page.goto(ui.url);
   await page.waitForFunction(() => document.querySelector('#connection-label').textContent.includes('connected'));
   assert.equal(await page.locator('html').getAttribute('lang'), 'en', 'First visit defaults to English even in a Korean browser.');
@@ -59,15 +78,30 @@ try {
   await reloadDialog.dismiss();
   await reloadPromise;
   assert.equal(await page.locator('#flow-input').inputValue(), 'Keep this unsaved flow', 'Dismissing the browser prompt preserves typed content.');
-  await page.locator('#flow-input').fill('');
   await page.locator('#technical-details summary').click();
+  await withoutConfirmation(() => page.locator('#new-draft-btn').click());
+  assert.equal(await page.locator('#flow-input').inputValue(), 'Keep this unsaved flow', 'A flow-only reset keeps the scenario without prompting.');
+  await page.locator('#suite-editor').fill('{"id":"keep-manual-draft"}');
+  await confirmReplacement(() => page.locator('#new-draft-btn').click(), false);
+  assert.equal(await page.locator('#suite-editor').inputValue(), '{"id":"keep-manual-draft"}');
+  assert.equal(await page.locator('#flow-input').inputValue(), 'Keep this unsaved flow');
+  await confirmReplacement(() => page.locator('#new-draft-btn').click(), true);
+  assert.equal(await page.locator('#suite-editor').inputValue(), '');
+  assert.equal(await page.locator('#flow-input').inputValue(), 'Keep this unsaved flow', 'Starting a new JSON draft keeps the scenario.');
+  await page.locator('#flow-input').fill('');
   await page.locator('#suite-editor').fill('{"id":"manual-draft"}');
   assert.equal(await hasBeforeUnloadWarning(), true, 'Pasted manual JSON warns before leaving.');
   await page.locator('#suite-editor').fill('');
   assert.equal(await hasBeforeUnloadWarning(), false, 'Clearing the unsaved content restores the clean state.');
   await page.locator('#technical-details summary').click();
   await page.locator('[data-view="library"]').click();
-  await page.locator('#library-list button').first().click();
+  const loadFirstSuite = async () => {
+    const response = page.waitForResponse(result => result.url().includes('/api/suite?'));
+    await page.locator('#library-list button').first().click();
+    assert.equal((await response).status(), 200);
+    await page.waitForFunction(() => !document.querySelector('#flow-input').disabled);
+  };
+  await withoutConfirmation(loadFirstSuite);
   await page.locator('#draft-summary .case-review').first().waitFor();
   const flow = await page.locator('#flow-input').inputValue();
   const suite = await page.locator('#suite-editor').inputValue();
@@ -77,6 +111,31 @@ try {
   await page.locator('#target-select').selectOption('demo');
   await page.locator('#review-checkbox').check();
   assert.equal(await page.locator('#run-btn').isEnabled(), true);
+  await page.locator('#flow-input').fill(flow + '\nUnsaved scenario change');
+  await withoutConfirmation(async () => {
+    await page.locator('[data-view="history"]').click();
+    await page.locator('[data-view="library"]').click();
+  });
+  await page.locator('#language-select').selectOption('ko');
+  await confirmReplacement(loadFirstSuite, false, /저장되지 않은/);
+  assert.equal(await page.locator('#flow-input').inputValue(), flow + '\nUnsaved scenario change');
+  assert.equal(await page.locator('#suite-editor').inputValue(), suite);
+  assert.equal(await page.locator('#view-library').isVisible(), true, 'Cancel stays in the library without replacing the scenario.');
+  assert.equal(await page.locator('#review-checkbox').isChecked(), false);
+  await page.locator('#language-select').selectOption('en');
+  await confirmReplacement(loadFirstSuite, true);
+  assert.equal(await page.locator('#flow-input').inputValue(), flow);
+  assert.equal(await page.locator('#suite-editor').inputValue(), suite);
+  assert.equal(await page.locator('#review-checkbox').isChecked(), false, 'Loading still requires a fresh review.');
+  await page.locator('#flow-input').fill(flow + '\nScenario-only change');
+  await page.locator('#technical-details summary').click();
+  await withoutConfirmation(() => page.locator('#new-draft-btn').click());
+  assert.equal(await page.locator('#suite-editor').inputValue(), '', 'Saved unchanged JSON can be cleared without prompting.');
+  assert.equal(await page.locator('#flow-input').inputValue(), flow + '\nScenario-only change', 'Reset keeps scenario-only edits.');
+  await page.locator('#technical-details summary').click();
+  await page.locator('[data-view="library"]').click();
+  await confirmReplacement(loadFirstSuite, true);
+  await page.locator('#review-checkbox').check();
 
   await page.locator('[data-view="settings"]').click();
   await page.locator('#target-form [name="name"]').fill('unsaved-target');
@@ -147,11 +206,17 @@ try {
   const importedSuite = { ...JSON.parse(suite), id: 'imported-demo', source: {
     file: 'flows/imported-demo.md', sha256: createHash('sha256').update(importedFlow).digest('hex'),
   } };
-  const upload = async (caseFile, markdown = importedFlow) => {
+  const upload = async (caseFile, markdown = importedFlow, confirm = false) => {
     await page.locator('#import-json').setInputFiles({ name: 'cases.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(caseFile)) });
     await page.locator('#import-markdown').setInputFiles(markdown === null ? [] : { name: 'source.md', mimeType: 'text/markdown', buffer: Buffer.from(markdown) });
     const response = page.waitForResponse((result) => result.url().endsWith('/api/import') && result.request().method() === 'POST');
-    await page.locator('#import-btn').click();
+    const importSelected = async () => {
+      await page.locator('#import-btn').click();
+      await response;
+      await page.waitForFunction(() => !document.querySelector('#flow-input').disabled);
+    };
+    if (confirm) await confirmReplacement(importSelected, true);
+    else await withoutConfirmation(importSelected);
     return response;
   };
   const previousSuite = await page.locator('#suite-editor').inputValue();
@@ -207,7 +272,17 @@ try {
   assert.equal(await page.locator('#run-btn').isEnabled(), false);
   const sourceLessSuite = { ...importedSuite, id: 'imported-no-source' };
   delete sourceLessSuite.source;
-  assert.equal((await upload(sourceLessSuite, null)).status(), 200);
+  const beforeCancelledImport = await page.locator('#suite-editor').inputValue();
+  const flowBeforeCancelledImport = await page.locator('#flow-input').inputValue();
+  await page.locator('#review-checkbox').check();
+  await page.locator('#import-json').setInputFiles({ name: 'cases.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(sourceLessSuite)) });
+  await page.locator('#import-markdown').setInputFiles([]);
+  await confirmReplacement(() => page.locator('#import-btn').click(), false);
+  assert.equal(await page.locator('#suite-editor').inputValue(), beforeCancelledImport);
+  assert.equal(await page.locator('#flow-input').inputValue(), flowBeforeCancelledImport);
+  assert.equal(await page.locator('#review-checkbox').isChecked(), true, 'Cancel preserves the existing review state.');
+  assert.equal(await page.locator('#import-json').evaluate(input => input.files.length), 1, 'Cancel keeps selected files for retry.');
+  assert.equal((await upload(sourceLessSuite, null, true)).status(), 200);
   await page.waitForFunction(() => document.querySelector('#draft-source').textContent.includes('imported case copy'));
   assert.equal(await hasBeforeUnloadWarning(), true, 'An imported source-less draft warns before it is saved.');
   assert.equal(await page.locator('#flow-input').inputValue(), '');
@@ -252,7 +327,7 @@ try {
   assert.equal(await page.locator('#import-json').evaluate((input) => input.files.length), 1);
   await page.locator('#import-markdown').setInputFiles({ name: 'source.md', mimeType: 'text/markdown', buffer: Buffer.from(importedFlow) });
   const retry = page.waitForResponse((response) => response.url().endsWith('/api/import') && response.request().method() === 'POST');
-  await page.locator('#import-btn').click();
+  await confirmReplacement(() => page.locator('#import-btn').click(), true);
   assert.equal((await retry).status(), 200);
   await page.waitForFunction(() => document.querySelector('#draft-source').textContent.includes('imported copy'));
   assert.equal(await page.locator('#import-json').evaluate((input) => input.files.length), 0);
@@ -260,7 +335,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Import UI must fit the mobile viewport.');
   assert.deepEqual(errors, [], 'No browser runtime errors.');
-  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, unsavedDraftWarning: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
+  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

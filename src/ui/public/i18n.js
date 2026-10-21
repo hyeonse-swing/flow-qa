@@ -226,6 +226,8 @@
     'app.plannerCliOnly': ['This model can be used from the CLI. Connect an OpenAI-compatible model to generate cases in the UI.', '이 모델은 CLI에서 사용할 수 있습니다. UI에서 생성하려면 OpenAI 호환 모델을 연결하세요.'],
     'app.plannerReady': ['Ready to generate. The actual model call and costs may occur when you select Generate.', '생성 준비가 됐습니다. 실제 모델 호출과 비용은 생성 버튼을 누를 때 발생할 수 있습니다.'],
     'app.runEnded': ['Run ended. Check Run history for results.', '실행이 종료됐습니다. 실행 기록에서 결과를 확인하세요.'],
+    'app.confirmReplaceDraft': ['Unsaved changes to the current scenario or cases will be discarded. Saved files will remain unchanged. Cancel to keep editing.', '현재 시나리오 또는 케이스의 저장되지 않은 변경 사항이 사라집니다. 저장된 파일은 변경되지 않습니다. 취소하면 계속 편집할 수 있습니다.'],
+    'app.confirmNewDraft': ['Unsaved case JSON will be cleared. The scenario text and saved files will remain unchanged. Cancel to keep editing.', '저장되지 않은 케이스 JSON이 지워집니다. 시나리오 내용과 저장된 파일은 유지됩니다. 취소하면 계속 편집할 수 있습니다.'],
     'app.suiteLoaded': ['Saved cases loaded. Editing the linked scenario requires generating or loading cases again.', '저장된 케이스를 불러왔습니다. 연결된 시나리오를 수정하면 케이스를 다시 생성하거나 불러와야 합니다.'],
     'app.enterFlow': ['Enter a scenario with expected behavior.', '기대 동작을 포함한 시나리오를 입력하세요.'],
     'app.configurePlanner': ['Configure an OpenAI-compatible AI planner and key environment variable in Connections.', '연결 설정에서 OpenAI 호환 AI 플래너와 키 환경 변수를 준비하세요.'],

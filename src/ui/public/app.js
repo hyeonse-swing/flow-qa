@@ -243,7 +243,7 @@
     if (state.lastError && state.lastError !== app.lastError) { app.lastError = state.lastError; notice(state.lastError, true); }
   }
   async function work(fn) { if (app.busy) return; app.busy = true; readiness(); notice(''); try { await fn(); } catch (error) { showError(error); } finally { app.busy = false; readiness(); } }
-  async function loadSuite(file) { await work(async () => { const result = await api(`/api/suite?file=${encodeURIComponent(file)}`); $('flow-input').value = result.flow || ''; setDraft(result.suite, result.script, 'library', result.flow || '', file, result.suiteHash || ''); noticeKey('app.suiteLoaded'); view('scenario'); }); }
+  async function loadSuite(file) { await work(async () => { const result = await api(`/api/suite?file=${encodeURIComponent(file)}`); if (!confirmScenarioReplacement('app.confirmReplaceDraft')) return; $('flow-input').value = result.flow || ''; setDraft(result.suite, result.script, 'library', result.flow || '', file, result.suiteHash || ''); noticeKey('app.suiteLoaded'); view('scenario'); }); }
   async function generate() { await work(async () => {
     const flow = $('flow-input').value.trim();
     if (!flow) throw localizedError('app.enterFlow');
@@ -267,6 +267,9 @@
       || suite !== JSON.stringify(app.draft, null, 2)
       || $('scenario-platform').value !== suitePlatform();
   }
+  function confirmScenarioReplacement(key) {
+    return !hasUnsavedScenario() || window.confirm(t(key));
+  }
   function warnBeforeUnload(event) {
     if (!hasUnsavedScenario()) return;
     event.preventDefault();
@@ -286,6 +289,7 @@
       const body = { suite, ...(flow === undefined ? {} : { flow }) };
       if (new TextEncoder().encode(JSON.stringify(body)).byteLength > 256 * 1024) throw localizedError('app.importTooLarge');
       const result = await api('/api/import', body);
+      if (!confirmScenarioReplacement('app.confirmReplaceDraft')) return;
       $('flow-input').value = flow || '';
       setDraft(result.suite, result.script, 'imported', flow || '');
       noticeKey('app.importComplete');
@@ -393,6 +397,9 @@
     $('library-shortcut').addEventListener('click', () => view('library'));
     $('new-draft-btn').addEventListener('click', () => {
       if (app.busy) return;
+      const json = $('suite-editor').value;
+      const unsavedJson = json.trim() && (!app.savedFile || json !== JSON.stringify(app.draft, null, 2));
+      if (unsavedJson && !confirmScenarioReplacement('app.confirmNewDraft')) return;
       app.draft = null; app.script = ''; app.savedFile = ''; app.savedHash = '';
       app.origin = 'none'; app.sourceFlow = ''; app.boundSource = null; app.stale = false; app.dirty = false;
       $('suite-editor').value = ''; $('review-checkbox').checked = false;

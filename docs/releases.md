@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.4: confirm before replacing unsaved cases
+
+Loading a library suite, importing valid case files, or starting a new JSON draft now asks before discarding unsaved content. Cancel preserves the current draft and selected import files. New JSON drafts keep the scenario text; unchanged saved cases, flow-only JSON resets, and ordinary screen navigation stay quiet. Failed imports still report validation errors without replacing the draft. Existing save, review, generation, and execution behavior remains unchanged.
+
+Locally verified on macOS with Node.js 24.14.1 on 2026-10-21: 92 tests, type checking, UI syntax and design-system audit, real Chromium confirmation acceptance/cancellation in English and Korean, preserved inputs and import selections, unchanged navigation and validation errors, and a fresh package install with three passing browser cases. Existing file download, re-import, and browser leave-page checks passed without model calls.
+
+- Package: [`@ihyeon/flow-qa@0.2.4`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.4)
+- Release: [GitHub 0.2.4](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.4)
+
 ## 0.2.3: download saved case files
 
 Adds separate case JSON and source Markdown download buttons to case review. Saved cases can be reused without finding workspace files manually; source-less cases offer JSON only. Unsaved or outdated drafts are excluded. The source text and hash remain compatible with file import, while existing save, review, and execution gates stay in place.

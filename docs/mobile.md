@@ -9,7 +9,7 @@ Choose **Mobile** on the scenario screen, describe the flow, and generate or dow
 With the installed CLI:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.3
+npm install -g @ihyeon/flow-qa@0.2.4
 flow-qa init ./my-qa
 # Write your mobile flow in my-qa/flows/my-flow.md first.
 flow-qa plan flows/my-flow.md --platform mobile --prompt-only --workspace ./my-qa

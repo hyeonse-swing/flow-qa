@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.8 or later is required. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.3
+npm install -g @ihyeon/flow-qa@0.2.4
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -42,7 +42,9 @@ For each attempt, the report can open or download an approved screenshot or text
 
 To enter fresh JSON after changing a scenario, open the JSON editor in case review and choose **New JSON draft**. Existing saved files remain; validate and save the new JSON before reviewing it for a run.
 
-From version `0.2.2`, the UI requests the browser's leave-page confirmation when refreshing or closing a tab with an unsaved scenario or case draft. Unchanged saved cases do not trigger it; saving clears the warning. Choose to stay on the page to keep editing. The browser controls the prompt wording and availability. This is not automatic saving, and it does not guard actions within the UI that replace the draft.
+From version `0.2.2`, the UI requests the browser's leave-page confirmation when refreshing or closing a tab with an unsaved scenario or case draft. Unchanged saved cases do not trigger it; saving clears the warning. Choose to stay on the page to keep editing. The browser controls the prompt wording and availability. This is not automatic saving.
+
+From version `0.2.4`, loading a suite from the library or importing valid case files also asks before replacing unsaved scenario or case content. **New JSON draft** asks before clearing unsaved JSON and keeps the scenario text. Cancel keeps the current content and selected import files. Unchanged saved cases and ordinary navigation between screens do not prompt; invalid imports still show their validation error without replacing anything.
 
 ### Import existing case files
 
