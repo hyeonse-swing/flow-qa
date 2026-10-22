@@ -13,17 +13,19 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 
 ## Try the local demo
 
-Node.js 24.8 or later is required. Install Chromium before the first web run:
+Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.4
+npm install -g @ihyeon/flow-qa@0.2.5
 flow-qa browser install
 flow-qa ui --demo
 ```
 
 Open the printed local UI address, then follow **Case library → Load → Review → Run QA**. The command starts a separate local demo app and workspace; no API key is needed. Results are saved under `.flowqa/ui-demo-en/` in the current directory. If Chromium lacks system libraries, use `flow-qa browser install --with-deps`. See the [UI guide](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md).
 
-To work from source or reproduce the checks:
+Upgrade Node itself before installing Flow QA; an npm package update does not patch the runtime. This minimum follows the [October 21, 2026 Node.js security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Node 25 is not supported. With nvm, run `nvm install 24.22.1` and `nvm use 24.22.1`, then restart any running Flow QA process.
+
+To work from source or reproduce the checks, use the Node 24 LTS version pinned in `.nvmrc` (with nvm: `nvm install` and `nvm use`):
 
 ```sh
 npm ci

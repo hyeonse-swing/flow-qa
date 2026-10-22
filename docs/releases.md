@@ -2,6 +2,19 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.5: update the Node.js security baseline
+
+Raises the Node.js requirement to `^24.22.1 || >=26.12.1` for the [October 21, 2026 security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases), including fixes in TLS, DNS, HTTP, and Brotli. Vulnerable Node 24/26 versions and the unsupported Node 25 line no longer satisfy the package engine requirement. Local development and all release jobs use Node 24.22.1 from `.nvmrc`.
+
+Upgrade Node itself and restart Flow QA; installing this package does not replace an existing Node process. With nvm, run `nvm install 24.22.1` and `nvm use 24.22.1` before installing Flow QA. The locked Undici dependency is also updated from 7.30.0 to 7.30.1 for its [security fixes](https://github.com/nodejs/undici/releases/tag/v7.30.1). Application behavior and direct dependency versions remain unchanged.
+
+The separate MCP server SDK findings in `npm audit` remain in the pinned e2e dependency. Flow QA invokes `e2e run`, not the MCP server command; upgrading that runner requires separate compatibility validation and is outside this Node security patch.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-10-22: 92 tests, type checking, UI syntax and design-system audit, real Chromium UI and demo checks, package validation, and a fresh tarball install with three passing browser cases. The engine range rejects older Node 24/26 versions and Node 25, and all release jobs read the same runtime pin. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.5`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.5)
+- Release: [GitHub 0.2.5](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.5)
+
 ## 0.2.4: confirm before replacing unsaved cases
 
 Loading a library suite, importing valid case files, or starting a new JSON draft now asks before discarding unsaved content. Cancel preserves the current draft and selected import files. New JSON drafts keep the scenario text; unchanged saved cases, flow-only JSON resets, and ordinary screen navigation stay quiet. Failed imports still report validation errors without replacing the draft. Existing save, review, generation, and execution behavior remains unchanged.

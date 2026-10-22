@@ -13,17 +13,19 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 
 ## 로컬 데모 시작
 
-Node.js 24.8 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
+Node.js 24.x(24.22.1 이상) 또는 26.12.1 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.4
+npm install -g @ihyeon/flow-qa@0.2.5
 flow-qa browser install
 flow-qa ui --demo
 ```
 
 출력된 로컬 UI 주소에서 **케이스 보관함 → 예제 불러오기 → 검토 → 실행** 순서로 진행합니다. 데모 앱과 별도 작업 공간이 함께 시작되며 API 키가 필요하지 않습니다. 결과는 현재 디렉터리의 `.flowqa/ui-demo-en/`에 저장됩니다. 기존 한국어 데모 데이터는 별도로 유지되며, 언어 전환은 예제·사용자 문장을 자동 번역하지 않습니다. 문제가 있으면 `flow-qa browser install --with-deps`로 Chromium의 시스템 의존성을 설치할 수 있습니다. 자세한 화면 동작은 [UI 안내](https://github.com/hyeonse-swing/flow-qa/blob/main/docs/ui.md)에 있습니다.
 
-소스에서 개발하거나 검증을 재현하려면:
+Flow QA를 설치하기 전에 Node 자체도 업데이트해야 합니다. npm 패키지 업데이트만으로 실행 중인 Node가 패치되지는 않습니다. 최소 버전은 [2026년 10월 21일 Node 보안 릴리스](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)를 기준으로 하며 Node 25는 지원하지 않습니다. nvm을 쓴다면 `nvm install 24.22.1`, `nvm use 24.22.1`을 실행하고 이미 실행 중인 Flow QA를 재시작하세요.
+
+소스에서 개발하거나 검증을 재현하려면 `.nvmrc`에 지정된 Node 24 LTS를 사용합니다(nvm: `nvm install`, `nvm use`).
 
 ```sh
 npm ci

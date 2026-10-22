@@ -1,6 +1,6 @@
 # User-configured iOS and Android targets
 
-Mobile targets require Flow QA `0.2.0` or later and Node.js 24.8 or later. The web demo remains a browser demo; it is not proof of a mobile run.
+Mobile targets require Flow QA `0.2.0` or later and Node.js 24.x (24.22.1 or later) or 26.12.1 or later. The web demo remains a browser demo; it is not proof of a mobile run.
 
 ## Write cases now, connect an app later
 
@@ -9,7 +9,7 @@ Choose **Mobile** on the scenario screen, describe the flow, and generate or dow
 With the installed CLI:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.4
+npm install -g @ihyeon/flow-qa@0.2.5
 flow-qa init ./my-qa
 # Write your mobile flow in my-qa/flows/my-flow.md first.
 flow-qa plan flows/my-flow.md --platform mobile --prompt-only --workspace ./my-qa

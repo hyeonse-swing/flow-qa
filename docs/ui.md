@@ -4,10 +4,10 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 
 ## Start
 
-Node.js 24.8 or later is required. Install Flow QA and start the web demo:
+Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.4
+npm install -g @ihyeon/flow-qa@0.2.5
 flow-qa browser install
 flow-qa ui --demo
 ```

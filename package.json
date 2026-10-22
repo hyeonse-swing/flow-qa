@@ -1,6 +1,6 @@
 {
   "name": "@ihyeon/flow-qa",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "license": "MIT",
   "author": "Hyeonse Im",
   "repository": {
@@ -38,7 +38,7 @@
   "description": "Turn user flows into repeatable tests and evidence-backed QA reports.",
   "type": "module",
   "engines": {
-    "node": ">=24.8.0"
+    "node": "^24.22.1 || >=26.12.1"
   },
   "bin": {
     "flow-qa": "./dist/bin/flow-qa.mjs"
