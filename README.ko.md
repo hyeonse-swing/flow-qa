@@ -16,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24.x(24.22.1 이상) 또는 26.12.1 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.5
+npm install -g @ihyeon/flow-qa@0.2.6
 flow-qa browser install
 flow-qa ui --demo
 ```

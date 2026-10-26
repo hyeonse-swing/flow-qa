@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.5
+npm install -g @ihyeon/flow-qa@0.2.6
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -32,7 +32,7 @@ The UI starts in **English**, regardless of browser language. Switch to **한국
 2. **Connections:** When ready, register a target name and web URL, or choose iOS/Android and enter an installed app's bundle/package ID and device. Planner and execution agent models have separate settings. Saving settings does not start an app or model request.
 3. **Review and save cases:** Expand each case to read preconditions, actions, expected results, and unresolved questions. Editing the JSON keeps the linked flow; if that source flow changes, design the cases again. Planning and running are separate actions. Editing inputs or connection settings alone does not call a model.
 4. **Run QA:** Review the saved case file, select a matching web/mobile target, and check the review confirmation before running. If the file or target settings change after review, reload and review them again. Fixed steps need no agent model. `act` and `assertAgent` require a compatible agent; missing models and unresolved questions are reported as blocked cases.
-5. **Case library and Run history:** Save cases as new files and load them again. Open run details to see each case, attempt, and evidence; download the Markdown or JSON report.
+5. **Case library and Run history:** Save cases as new files, search by title, suite ID, or file name, and load them again. Open run details to see each case, attempt, and evidence; download the Markdown or JSON report.
 
 The top bar shows planning, running, and stopping states, plus a cancel button. A late planning response cannot change the draft after cancellation. The UI does not estimate progress inside an individual browser action. If the server disconnects, reconnect; runs started in another tab also appear. Refreshing settings rereads targets and models, so save edits first.
 
@@ -45,6 +45,10 @@ To enter fresh JSON after changing a scenario, open the JSON editor in case revi
 From version `0.2.2`, the UI requests the browser's leave-page confirmation when refreshing or closing a tab with an unsaved scenario or case draft. Unchanged saved cases do not trigger it; saving clears the warning. Choose to stay on the page to keep editing. The browser controls the prompt wording and availability. This is not automatic saving.
 
 From version `0.2.4`, loading a suite from the library or importing valid case files also asks before replacing unsaved scenario or case content. **New JSON draft** asks before clearing unsaved JSON and keeps the scenario text. Cancel keeps the current content and selected import files. Unchanged saved cases and ordinary navigation between screens do not prompt; invalid imports still show their validation error without replacing anything.
+
+### Search saved cases
+
+From version `0.2.6`, **Case library** filters saved suites as you type in **Search saved suites**. Search matches part of a title, suite ID, or file name, ignores letter case and surrounding whitespace, and supports Korean text. Clear the field to show all suites. The query stays while navigating, changing language, or receiving updated saved cases; it resets when the page reloads. Search covers the listed top-level case files, not individual steps or source Markdown.
 
 ### Import existing case files
 

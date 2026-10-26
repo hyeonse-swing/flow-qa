@@ -204,7 +204,10 @@
     const host = $('library-list'); replace(host);
     const suites = app.state?.suites || [];
     if (!suites.length) { host.append(el('p', 'empty', t('app.libraryEmpty'))); return; }
-    for (const suite of suites) {
+    const query = $('library-search').value.trim().toLowerCase();
+    const matchingSuites = suites.filter((suite) => !query || [suite.title, suite.id, suite.file].some((field) => String(field || '').toLowerCase().includes(query)));
+    if (!matchingSuites.length) { host.append(el('p', 'empty', t('app.libraryNoMatches'))); return; }
+    for (const suite of matchingSuites) {
       const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', suite.title || suite.id), el('small', '', t('app.libraryMeta', { id: suite.id, count: suite.caseCount, questions: suite.questionCount, file: suite.file })));
       const button = el('button', 'button', t('app.load')); button.type = 'button'; button.addEventListener('click', () => loadSuite(suite.file)); row.append(copy, button); host.append(row);
     }
@@ -393,6 +396,7 @@
   function wire() {
     window.addEventListener('beforeunload', warnBeforeUnload);
     document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => view(button.dataset.view)));
+    $('library-search').addEventListener('input', renderLibrary);
     $('nav-toggle').addEventListener('click', () => { const open = $('sidebar').classList.toggle('nav-open'); $('nav-toggle').setAttribute('aria-expanded', String(open)); });
     $('library-shortcut').addEventListener('click', () => view('library'));
     $('new-draft-btn').addEventListener('click', () => {

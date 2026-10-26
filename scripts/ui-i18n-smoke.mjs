@@ -14,6 +14,8 @@ await mkdir(artifacts, { recursive: true });
 let demo; let ui; let browser;
 try {
   await initWorkspace(workspace);
+  const libraryExample = JSON.parse(await readFile(path.join(workspace, 'cases/task-flow.json'), 'utf8'));
+  await writeJSON(path.join(workspace, 'cases/z-library-search.json'), { ...libraryExample, id: 'lookup-id-only', title: '보관함 Search Sample' });
   demo = await startDemo(0);
   await writeJSON(path.join(workspace, 'flowqa.config.json'), {
     schemaVersion: 'flow-qa/config-1', targets: { demo: { url: demo.url, description: 'Local demo · 임의 사용자 설명' } },
@@ -95,6 +97,45 @@ try {
   assert.equal(await hasBeforeUnloadWarning(), false, 'Clearing the unsaved content restores the clean state.');
   await page.locator('#technical-details summary').click();
   await page.locator('[data-view="library"]').click();
+  const librarySearch = page.getByRole('searchbox', { name: 'Search saved suites' });
+  const libraryTitles = () => page.locator('#library-list .list-row strong').allTextContents();
+  assert.equal(await page.locator('#library-list .list-row').count(), 2);
+  await librarySearch.fill('  sEaRcH sAmPlE  ');
+  assert.deepEqual(await libraryTitles(), ['보관함 Search Sample'], 'Search matches a title regardless of case or surrounding whitespace.');
+  await librarySearch.fill('LOOKUP-ID-ONLY');
+  assert.deepEqual(await libraryTitles(), ['보관함 Search Sample'], 'Search matches the suite ID independently of its title.');
+  await librarySearch.fill('Z-LIBRARY-SEARCH.JSON');
+  assert.deepEqual(await libraryTitles(), ['보관함 Search Sample'], 'Search matches the saved file name.');
+  await librarySearch.fill('보관함');
+  assert.deepEqual(await libraryTitles(), ['보관함 Search Sample']);
+  await page.screenshot({ path: path.join(artifacts, 'library-search-en.png'), fullPage: true });
+  await librarySearch.fill('missing-suite-query');
+  assert.deepEqual(await libraryTitles(), []);
+  assert.match(await page.locator('#library-list .empty').textContent(), /no.*match/i);
+  await page.locator('#language-select').selectOption('ko');
+  assert.equal(await page.locator('#library-search').inputValue(), 'missing-suite-query', 'Changing language preserves the search.');
+  assert.match(await page.locator('#library-list .empty').textContent(), /검색/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Library search fits the mobile viewport.');
+  await page.screenshot({ path: path.join(artifacts, 'library-search-ko-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('#language-select').selectOption('en');
+  await librarySearch.fill('   ');
+  assert.equal(await page.locator('#library-list .list-row').count(), 2, 'Whitespace restores the full library.');
+  await librarySearch.fill('create');
+  await page.locator('[data-view="history"]').click();
+  await page.locator('[data-view="library"]').click();
+  assert.equal(await librarySearch.inputValue(), 'create', 'Navigation preserves the search.');
+  await writeJSON(path.join(workspace, 'cases/z-polling-search.json'), { ...libraryExample, id: 'polling-match', title: 'Create polling match' });
+  await page.waitForFunction(() => document.querySelectorAll('#library-list .list-row').length === 2);
+  assert.deepEqual((await libraryTitles()).sort(), ['Create and filter tasks', 'Create polling match'], 'Polling applies the current query to newly saved suites.');
+  await rm(path.join(workspace, 'cases/z-library-search.json'));
+  await rm(path.join(workspace, 'cases/z-polling-search.json'));
+  await page.waitForFunction(() => document.querySelectorAll('#library-list .list-row').length === 1);
+  await librarySearch.fill('');
+  assert.equal(await page.locator('#library-list .list-row').count(), 1, 'Clearing the query restores the current library.');
+  assert.equal(await hasBeforeUnloadWarning(), false, 'Searching does not modify the scenario draft.');
+  await librarySearch.fill('TASK-FLOW.JSON');
   const loadFirstSuite = async () => {
     const response = page.waitForResponse(result => result.url().includes('/api/suite?'));
     await page.locator('#library-list button').first().click();
@@ -335,7 +376,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Import UI must fit the mobile viewport.');
   assert.deepEqual(errors, [], 'No browser runtime errors.');
-  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
+  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, librarySearch: true, librarySearchPolling: true, librarySearchMobileOverflow: false, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

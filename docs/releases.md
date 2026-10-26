@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.6: search the case library
+
+Adds a search field to the case library. Filter saved suites by title, suite ID, or file name with case-insensitive partial matching; surrounding whitespace is ignored. Clearing the query restores the full list. English and Korean labels and no-match guidance are included. The current query stays through navigation, language changes, and automatic library updates. Existing case loading, unsaved-draft confirmation, review, and execution behavior stays in place.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-10-26: 92 tests, type checking, UI syntax and design-system audit, real Chromium search checks for all three fields, Korean text, no matches, clearing, navigation, language changes, newly saved files, filtered loading, and a 390px viewport. Existing UI and demo checks, package validation, and a fresh tarball install with three passing browser cases also passed. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.6`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.6)
+- Release: [GitHub 0.2.6](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.6)
+
 ## 0.2.5: update the Node.js security baseline
 
 Raises the Node.js requirement to `^24.22.1 || >=26.12.1` for the [October 21, 2026 security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases), including fixes in TLS, DNS, HTTP, and Brotli. Vulnerable Node 24/26 versions and the unsupported Node 25 line no longer satisfy the package engine requirement. Local development and all release jobs use Node 24.22.1 from `.nvmrc`.
