@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.7: filter run history by status
+
+Adds a Run status selector to run history for passed, failed, blocked, error, and interrupted reports. All statuses restores the loaded list, and a separate message explains when the selected status has no matches. The selected status stays through navigation, language changes, and automatic report updates. This filters the UI's existing most recent 50 reports and preserves the open report, downloads, and scenario review state.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-10-26: 92 tests, type checking, UI syntax and design-system audit, and real Chromium filter checks for all five statuses using report fixtures alongside a real passing run. Empty results, restoring all reports, English/Korean selection, navigation, newly saved reports, filtered report opening and download, and a 390px viewport passed. Existing UI and demo checks, package validation, and a fresh tarball installation with three passing browser cases also passed. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.7`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.7)
+- Release: [GitHub 0.2.7](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.7)
+
 ## 0.2.6: search the case library
 
 Adds a search field to the case library. Filter saved suites by title, suite ID, or file name with case-insensitive partial matching; surrounding whitespace is ignored. Clearing the query restores the full list. English and Korean labels and no-match guidance are included. The current query stays through navigation, language changes, and automatic library updates. Existing case loading, unsaved-draft confirmation, review, and execution behavior stays in place.

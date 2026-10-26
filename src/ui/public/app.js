@@ -216,7 +216,10 @@
     const host = $('history-list'); replace(host);
     const runs = app.state?.runs || [];
     if (!runs.length) { host.append(el('p', 'empty', t(app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty'))); return; }
-    for (const run of runs) {
+    const status = $('history-status-filter').value;
+    const matchingRuns = status ? runs.filter((run) => run.status === status) : runs;
+    if (!matchingRuns.length) { host.append(el('p', 'empty', t('app.historyNoStatusMatches'))); return; }
+    for (const run of matchingRuns) {
       const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
     }
@@ -397,6 +400,7 @@
     window.addEventListener('beforeunload', warnBeforeUnload);
     document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => view(button.dataset.view)));
     $('library-search').addEventListener('input', renderLibrary);
+    $('history-status-filter').addEventListener('change', renderHistory);
     $('nav-toggle').addEventListener('click', () => { const open = $('sidebar').classList.toggle('nav-open'); $('nav-toggle').setAttribute('aria-expanded', String(open)); });
     $('library-shortcut').addEventListener('click', () => view('library'));
     $('new-draft-btn').addEventListener('click', () => {

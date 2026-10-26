@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.6
+npm install -g @ihyeon/flow-qa@0.2.7
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -32,7 +32,7 @@ The UI starts in **English**, regardless of browser language. Switch to **한국
 2. **Connections:** When ready, register a target name and web URL, or choose iOS/Android and enter an installed app's bundle/package ID and device. Planner and execution agent models have separate settings. Saving settings does not start an app or model request.
 3. **Review and save cases:** Expand each case to read preconditions, actions, expected results, and unresolved questions. Editing the JSON keeps the linked flow; if that source flow changes, design the cases again. Planning and running are separate actions. Editing inputs or connection settings alone does not call a model.
 4. **Run QA:** Review the saved case file, select a matching web/mobile target, and check the review confirmation before running. If the file or target settings change after review, reload and review them again. Fixed steps need no agent model. `act` and `assertAgent` require a compatible agent; missing models and unresolved questions are reported as blocked cases.
-5. **Case library and Run history:** Save cases as new files, search by title, suite ID, or file name, and load them again. Open run details to see each case, attempt, and evidence; download the Markdown or JSON report.
+5. **Case library and Run history:** Save cases as new files, search by title, suite ID, or file name, and load them again. Filter run history by status, then open run details to see each case, attempt, and evidence; download the Markdown or JSON report.
 
 The top bar shows planning, running, and stopping states, plus a cancel button. A late planning response cannot change the draft after cancellation. The UI does not estimate progress inside an individual browser action. If the server disconnects, reconnect; runs started in another tab also appear. Refreshing settings rereads targets and models, so save edits first.
 
@@ -49,6 +49,10 @@ From version `0.2.4`, loading a suite from the library or importing valid case f
 ### Search saved cases
 
 From version `0.2.6`, **Case library** filters saved suites as you type in **Search saved suites**. Search matches part of a title, suite ID, or file name, ignores letter case and surrounding whitespace, and supports Korean text. Clear the field to show all suites. The query stays while navigating, changing language, or receiving updated saved cases; it resets when the page reloads. Search covers the listed top-level case files, not individual steps or source Markdown.
+
+### Filter run history
+
+From version `0.2.7`, **Run history → Run status** filters the loaded reports by passed, failed, blocked, error, or interrupted. Choose **All statuses** to restore the list. The selection stays while navigating, changing language, or receiving updated reports, and resets on page reload. The filter applies to the most recent 50 reports loaded by the UI; it does not search older history or individual case results. Filtering keeps the report already open and its downloads available.
 
 ### Import existing case files
 

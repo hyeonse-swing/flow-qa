@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -217,6 +217,54 @@ try {
   assert.equal(report.status, 'passed');
   assert.equal(report.cases.filter(item => item.status === 'passed').length, 3);
   await page.locator('[data-view="history"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('#history-list .list-row').length === 1);
+  await page.locator('#language-select').selectOption('en');
+  const historyFilter = page.getByRole('combobox', { name: 'Run status', exact: true });
+  assert.equal(await historyFilter.inputValue(), '', 'History initially shows all statuses.');
+  assert.deepEqual(await historyFilter.locator('option').evaluateAll(options => options.map(option => option.value)), ['', 'passed', 'failed', 'blocked', 'error', 'interrupted']);
+  await historyFilter.selectOption('failed');
+  assert.equal(await page.locator('#history-list .list-row').count(), 0);
+  assert.match(await page.locator('#history-list .empty').textContent(), /no runs match this status/i);
+  await page.locator('#language-select').selectOption('ko');
+  assert.equal(await page.getByRole('combobox', { name: '실행 상태', exact: true }).inputValue(), 'failed');
+  assert.match(await page.locator('#history-list .empty').textContent(), /상태/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'The history filter fits a mobile viewport.');
+  await page.screenshot({ path: path.join(artifacts, 'history-filter-ko-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await withoutConfirmation(async () => {
+    await page.locator('[data-view="library"]').click();
+    await page.locator('[data-view="history"]').click();
+  });
+  assert.equal(await page.locator('#history-status-filter').inputValue(), 'failed', 'Navigation preserves the selected status.');
+  await page.locator('#language-select').selectOption('en');
+  const historyFixtures = [];
+  const addHistoryFixture = async (status, suffix = status) => {
+    const runId = randomUUID();
+    const folder = path.join(workspace, '.flowqa/runs', runId);
+    historyFixtures.push(folder);
+    await writeJSON(path.join(folder, 'qa-report.json'), { ...report, runId, suiteId: `history-${suffix}`, status, cases: [], errors: [] });
+  };
+  for (const status of ['failed', 'blocked', 'error', 'interrupted']) await addHistoryFixture(status);
+  await page.waitForFunction(() => document.querySelector('#history-list .list-row strong')?.textContent === 'history-failed · failed');
+  for (const status of ['passed', 'failed', 'blocked', 'error', 'interrupted']) {
+    await historyFilter.selectOption(status);
+    assert.deepEqual(await page.locator('#history-list .list-row strong').allTextContents(), [`${status === 'passed' ? report.suiteId : `history-${status}`} · ${status}`]);
+  }
+  await historyFilter.selectOption('');
+  assert.equal(await page.locator('#history-list .list-row').count(), 5, 'All statuses restores every loaded report.');
+  await historyFilter.selectOption('failed');
+  await addHistoryFixture('failed', 'failed-later');
+  await page.waitForFunction(() => document.querySelectorAll('#history-list .list-row').length === 2);
+  assert.deepEqual((await page.locator('#history-list .list-row strong').allTextContents()).sort(), ['history-failed · failed', 'history-failed-later · failed'].sort(), 'Polling applies the selected status to newly saved reports.');
+  await page.screenshot({ path: path.join(artifacts, 'history-filter-en.png'), fullPage: true });
+  for (const folder of historyFixtures) await rm(folder, { recursive: true, force: true });
+  await page.waitForFunction(() => document.querySelectorAll('#history-list .list-row').length === 0);
+  await historyFilter.selectOption('passed');
+  assert.equal(await page.locator('#history-list .list-row').count(), 1);
+  assert.equal(await hasBeforeUnloadWarning(), false, 'Filtering reports does not modify the saved scenario.');
+  assert.equal(await page.locator('#review-checkbox').isChecked(), true, 'Filtering preserves the scenario review state.');
+  await page.locator('#language-select').selectOption('ko');
   await page.locator('#history-list button').first().click();
   await page.locator('#report-content .case-report').first().waitFor();
   await page.screenshot({ path: path.join(artifacts, 'report-ko.png'), fullPage: true });
@@ -229,6 +277,13 @@ try {
   assert.match(await downloadReport(), /^# QA 결과:/);
   await page.locator('#language-select').selectOption('en');
   assert.match(await downloadReport(), /^# QA results:/);
+  assert.equal(await page.locator('#history-status-filter').inputValue(), 'passed', 'Opening and downloading a report preserves the filter.');
+  const openReportHeading = await page.locator('#report-heading').textContent();
+  await historyFilter.selectOption('failed');
+  assert.equal(await page.locator('#report-panel').isVisible(), true, 'Filtering the list keeps the open report available.');
+  assert.equal(await page.locator('#report-heading').textContent(), openReportHeading);
+  assert.match(await downloadReport(), /^# QA results:/);
+  await historyFilter.selectOption('passed');
   await page.screenshot({ path: path.join(artifacts, 'report-en.png'), fullPage: true });
   assert.equal(await page.locator('#report-content .case-report').count(), 3);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -376,7 +431,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Import UI must fit the mobile viewport.');
   assert.deepEqual(errors, [], 'No browser runtime errors.');
-  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, librarySearch: true, librarySearchPolling: true, librarySearchMobileOverflow: false, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
+  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, librarySearch: true, librarySearchPolling: true, librarySearchMobileOverflow: false, historyStatusFilter: true, historyStatusFilterPolling: true, historyStatusFilterMobileOverflow: false, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
