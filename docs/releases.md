@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.8: expand and collapse all case details
+
+Adds Expand all cases and Collapse all cases to Scenario case review. The controls appear when cases are available and change only the case details. Individual toggles, the first-case-open default on loading, and expansion state across language changes and navigation remain available. Bulk actions preserve the draft, JSON editor disclosure, review confirmation, and execution readiness.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-10-28: 92 tests, type checking, UI syntax and design-system audit, and real Chromium checks for empty and loaded reviews, bulk and individual toggles, mixed expansion state across language changes, keyboard activation, navigation, unchanged draft/review state, and a 390px viewport. Existing UI and demo checks, package validation, and a fresh tarball installation with three passing browser cases also passed. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.8`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.8)
+- Release: [GitHub 0.2.8](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.8)
+
 ## 0.2.7: filter run history by status
 
 Adds a Run status selector to run history for passed, failed, blocked, error, and interrupted reports. All statuses restores the loaded list, and a separate message explains when the selected status has no matches. The selected status stays through navigation, language changes, and automatic report updates. This filters the UI's existing most recent 50 reports and preserves the open report, downloads, and scenario review state.

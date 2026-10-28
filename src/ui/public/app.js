@@ -143,7 +143,16 @@
     const reqTitle = el('h3', '', t('app.requirements')); host.append(reqTitle);
     const reqList = el('ol', 'compact-list'); for (const req of suite.requirements || []) reqList.append(el('li', '', `${req.id} · ${req.text}`)); host.append(reqList);
     host.append(el('h3', 'case-title', t('app.caseSteps')));
-    for (const [index, item] of (suite.cases || []).entries()) {
+    const cases = suite.cases || [];
+    if (cases.length) {
+      const actions = el('div', 'actions');
+      const expand = el('button', 'button quiet', t('scenario.expandCases')); expand.type = 'button'; expand.id = 'expand-cases';
+      expand.addEventListener('click', () => host.querySelectorAll('details.case-review').forEach((detail) => { detail.open = true; }));
+      const collapse = el('button', 'button quiet', t('scenario.collapseCases')); collapse.type = 'button'; collapse.id = 'collapse-cases';
+      collapse.addEventListener('click', () => host.querySelectorAll('details.case-review').forEach((detail) => { detail.open = false; }));
+      actions.append(expand, collapse); host.append(actions);
+    }
+    for (const [index, item] of cases.entries()) {
       const detail = el('details', 'case-review'); detail.open = openCases ? !!openCases[index] : index === 0;
       detail.append(el('summary', '', `${item.id} · ${item.title}${item.questions?.length ? ` · ${t('app.caseBlocked')}` : ''}`));
       detail.append(el('p', 'hint', t('app.linkedRequirements', { ids: (item.requirementIds || []).join(', ') || t('app.none') })));

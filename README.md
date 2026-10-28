@@ -16,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.7
+npm install -g @ihyeon/flow-qa@0.2.8
 flow-qa browser install
 flow-qa ui --demo
 ```

@@ -36,6 +36,8 @@
     'scenario.prompt': ['Download generation prompt', '생성 프롬프트 다운로드'],
     'scenario.reviewTitle': ['Review cases', '케이스 검토'],
     'scenario.reviewHelp': ['Open each case to inspect its actions and expected results.', '각 케이스를 펼쳐 행동과 기대 결과를 살펴보세요.'],
+    'scenario.expandCases': ['Expand all cases', '케이스 모두 펼치기'],
+    'scenario.collapseCases': ['Collapse all cases', '케이스 모두 접기'],
     'scenario.importFiles': ['Import case files', '케이스 파일 가져오기'],
     'scenario.importJson': ['TC JSON', 'TC JSON'],
     'scenario.importMarkdown': ['Source Markdown (optional)', '원본 Markdown (선택)'],
