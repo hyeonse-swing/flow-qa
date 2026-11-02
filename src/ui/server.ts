@@ -13,6 +13,7 @@ import { localeFromAcceptLanguage, localizeProductMessage, type Locale } from '.
 import { EvidenceError, readEvidence } from './evidence.ts';
 import { buildPlanningPrompt, planFlow, PlannerError } from '../planner.ts';
 import { renderMarkdown, type QAReport } from '../report.ts';
+import { compareReports, ComparisonError, renderComparisonMarkdown } from '../run-comparison.ts';
 import { configSchema, idSchema, modelSchema, suiteSchema, targetSchema, type Config, type PlannerConnection, type Suite } from '../schema.ts';
 import { targetFingerprint } from '../targets.ts';
 import { CONFIG_FILE, sha256 } from '../workspace.ts';
@@ -402,6 +403,20 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         const runId = url.searchParams.get('runId');
         if (!runId) invalid('A run ID is required.');
         sendJSON(response, 200, await report(runId, true, locale)); return;
+      }
+      if (url.pathname === '/api/comparison') {
+        const baseline = url.searchParams.get('baseline');
+        const current = url.searchParams.get('current');
+        if (!baseline || !current) invalid('Both run IDs are required.');
+        const baselineReport = (await report(baseline, false)).report;
+        const currentReport = (await report(current, false)).report;
+        let comparison;
+        try { comparison = compareReports(baselineReport, currentReport); }
+        catch (error) {
+          if (error instanceof ComparisonError) throw new HTTPError(error.status, error.message);
+          throw error;
+        }
+        sendJSON(response, 200, { comparison, markdown: renderComparisonMarkdown(comparison, locale) }); return;
       }
       if (url.pathname === '/api/artifact') {
         const runId = url.searchParams.get('runId');

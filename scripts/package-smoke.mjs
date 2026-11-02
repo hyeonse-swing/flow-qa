@@ -101,7 +101,29 @@ try {
   report = (await (await get('/api/report?runId=' + finalState.lastRunId)).json()).report;
   assert.equal(report.status, 'passed', JSON.stringify(report.errors));
   assert.equal(report.cases.filter(item => item.status === 'passed').length, 3);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 3, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  // Exercise the compiled comparison endpoint with two reports from real runs.
+  const rerun = await fetch(url + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flowqa-token': state.csrfToken }, body: JSON.stringify({ suite: 'task-flow.json', suiteHash: suite.suiteHash, targetName: 'demo', targetURL: state.targets[0].url }) });
+  assert.equal(rerun.status, 202);
+  const comparisonDeadline = Date.now() + 90_000;
+  do {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    finalState = await (await get('/api/state')).json();
+  } while (finalState.active && Date.now() < comparisonDeadline);
+  assert.equal(finalState.active, null, 'Second installed demo timed out.');
+  assert.ok(finalState.lastRunId && finalState.lastRunId !== report.runId, finalState.lastError);
+  const comparisonRoute = '/api/comparison?' + new URLSearchParams({ baseline: report.runId, current: finalState.lastRunId });
+  const compared = await (await get(comparisonRoute)).json();
+  assert.equal(compared.comparison.schemaVersion, 'flow-qa/comparison-1');
+  assert.equal(compared.comparison.baseline.runId, report.runId);
+  assert.equal(compared.comparison.current.runId, finalState.lastRunId);
+  assert.equal(compared.comparison.current.status, 'passed');
+  assert.deepEqual(compared.comparison.counts, { 'newly-failed': 0, 'now-passed': 0, changed: 0, unchanged: 3, added: 0, missing: 0 });
+  assert.deepEqual(compared.comparison.warnings, []);
+  assert.ok(compared.markdown.includes(report.runId) && compared.markdown.includes(finalState.lastRunId));
+  const koreanComparison = await fetch(url + comparisonRoute, { headers: { 'Accept-Language': 'ko' } });
+  assert.equal(koreanComparison.status, 200);
+  assert.match((await koreanComparison.json()).markdown, /비교/);
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 6, runs: 2, comparison: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

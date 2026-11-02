@@ -38,6 +38,7 @@ jobs:
           path: |
             output/package/*.json
             output/playwright/i18n/result.json
+            output/playwright/comparison/result.json
             .flowqa/verification.md
           if-no-files-found: ignore
   publish:

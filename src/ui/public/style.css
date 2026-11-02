@@ -52,7 +52,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .page-heading h1 em { color: var(--accent-text); font-style: normal; }
 .page-heading > p:last-child { max-width: 56ch; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.7; }
 .workflow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: clamp(26px, 3vw, 46px); row-gap: calc(var(--space-factor) * 34px); }
-.work-section, .execution-section, .list-section, .report-panel, .settings-section { min-width: 0; border-top: 2px solid var(--ink); }
+.work-section, .execution-section, .list-section, .report-panel, .comparison-panel, .settings-section { min-width: 0; border-top: 2px solid var(--ink); }
 .section-head { display: flex; align-items: flex-start; gap: 13px; min-width: 0; padding: calc(var(--space-factor) * 19px) 0 calc(var(--space-factor) * 18px); border-bottom: 1px solid var(--line); }
 .section-head > div { min-width: 0; }
 .section-number { flex: none; min-width: 26px; padding-top: 4px; color: var(--accent-text); font-family: 'DM Sans', monospace; font-size: 11px; font-weight: 800; }
@@ -130,13 +130,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .review-line input { width: 18px; height: 18px; flex: none; margin: 2px 0 0; accent-color: var(--accent-solid); }
 .run-bar { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: auto; padding-top: 18px; }
 .run-bar > span { max-width: 37ch; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.list-section, .report-panel { margin-top: calc(var(--space-factor) * 28px); }
+.list-section, .report-panel, .comparison-panel { margin-top: calc(var(--space-factor) * 28px); }
 .list-body { min-width: 0; }
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: calc(var(--space-factor) * 19px) 0; border-bottom: 1px solid var(--line); }
 .list-row > div { min-width: 0; }
 .list-row strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
 .list-row small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .empty { max-width: 50ch; margin: 0; padding: 32px 0; color: var(--muted); line-height: 1.7; }
+
+.comparison-selects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.comparison-selects > div { min-width: 0; }
+.comparison-selects label, .comparison-filter-row label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
+.comparison-selects select, .comparison-filter-row select { display: block; width: 100%; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); }
+.comparison-actions { margin: 18px 0; }
+#comparison-status { min-height: 20px; }
+.comparison-warning { padding: 12px 14px; border-left: 3px solid var(--accent-solid); background: var(--surface); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.comparison-meta { font-size: 13px; overflow-wrap: anywhere; }
+.comparison-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--line); margin: 18px 0; }
+.comparison-count { min-width: 0; padding: 12px; border-right: 1px solid var(--line); overflow-wrap: anywhere; }
+.comparison-count:nth-child(3n) { border-right: 0; }
+.comparison-count:nth-child(n+4) { border-top: 1px solid var(--line); }
+.comparison-count strong, .comparison-count span { display: block; }
+.comparison-count strong { font-size: 22px; }
+.comparison-count span { color: var(--muted); font-size: 12px; }
+.comparison-filter-row { max-width: 320px; }
+#comparison-content, .comparison-panel { min-width: 0; }
 .report-panel .actions { margin-bottom: 25px; }
 .report-meta { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 23px; }
 .report-meta span { padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--radius-control); font-size: 12px; }
@@ -189,6 +207,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .execution-grid { grid-template-columns: 1fr; gap: 16px; }
   .run-bar { align-items: start; flex-direction: column; }
   .list-row { align-items: start; flex-direction: column; gap: 12px; }
+  .comparison-selects { grid-template-columns: 1fr; }
+  .comparison-count { padding: 9px 5px; }
+  .comparison-count strong { font-size: 19px; }
   .draft-topline { align-items: start; flex-direction: column; }
   .summary { padding: 17px; }
   .summary-stat { padding-inline: 5px; }

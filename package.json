@@ -1,6 +1,6 @@
 {
   "name": "@ihyeon/flow-qa",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "license": "MIT",
   "author": "Hyeonse Im",
   "repository": {
@@ -57,7 +57,7 @@
     "check:ui": "node --check src/ui/public/app.js && node --check src/ui/public/display.js && node --check src/ui/public/i18n.js && hds-audit .",
     "demo:serve": "node examples/demo/server.ts",
     "demo:smoke": "node scripts/demo-smoke.ts",
-    "smoke:ui": "node scripts/ui-i18n-smoke.mjs"
+    "smoke:ui": "node scripts/ui-i18n-smoke.mjs && node scripts/ui-comparison-smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.53",

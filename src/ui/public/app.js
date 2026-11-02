@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -53,7 +53,7 @@
     });
     $('breadcrumb').textContent = t('app.breadcrumb', { name: t(names[name]) });
     $('sidebar').classList.remove('nav-open'); $('nav-toggle').setAttribute('aria-expanded', 'false');
-    if (name === 'history') renderHistory();
+    if (name === 'history') { renderHistory(); renderComparisonOptions(); }
   }
   function suitePlatform() { return app.draft?.platform || 'web'; }
   function targetPlatform(target) { return target?.kind === 'mobile' ? 'mobile' : 'web'; }
@@ -239,6 +239,98 @@
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
     }
   }
+  const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'];
+  const comparisonCategoryKeys = { 'newly-failed': 'comparison.newlyFailed', 'now-passed': 'comparison.nowPassed', changed: 'comparison.changed', unchanged: 'comparison.unchanged', added: 'comparison.added', missing: 'comparison.missing' };
+  const comparisonWarningKeys = { 'suite-changed': 'comparison.warningSuite', 'reverse-order': 'comparison.warningReverse', 'incomplete-run': 'comparison.warningIncomplete', 'mobile-identity-unverified': 'comparison.warningMobileIdentity' };
+  function comparisonPair() { return { baseline: $('compare-baseline').value, current: $('compare-current').value }; }
+  function comparisonValid() { const { baseline, current } = comparisonPair(); return !!baseline && !!current && baseline !== current; }
+  function comparisonStatus(key, params = {}, error = false) {
+    app.comparisonStatus = key; app.comparisonStatusParams = params;
+    const node = $('comparison-status'); node.textContent = t(key, params); node.classList.toggle('report-errors', error);
+  }
+  function comparisonControls() {
+    const { baseline, current } = comparisonPair();
+    $('compare-btn').disabled = !comparisonValid() || app.comparisonBusy;
+    $('compare-swap').disabled = !baseline || !current || baseline === current;
+    const ready = !!app.comparison && comparisonValid() && app.comparison.baseline.runId === baseline && app.comparison.current.runId === current;
+    for (const id of ['comparison-md', 'comparison-json', 'compare-open-baseline', 'compare-open-current']) $(id).disabled = !ready;
+    $('comparison-results').hidden = !ready;
+  }
+  function clearComparison() {
+    app.comparisonRequest += 1; app.comparisonBusy = false; app.comparison = null; app.comparisonMarkdown = '';
+    $('comparison-summary').replaceChildren(); $('comparison-warnings').replaceChildren(); $('comparison-content').replaceChildren();
+    comparisonStatus('comparison.selectBoth'); comparisonControls();
+  }
+  function renderComparisonOptions() {
+    const runs = (app.state?.runs || []).slice(0, 50);
+    let missing = false;
+    for (const id of ['compare-baseline', 'compare-current']) {
+      const select = $(id); const selected = select.value;
+      select.replaceChildren(el('option', '', t('comparison.choose'))); select.firstChild.value = '';
+      for (const run of runs) {
+        const option = el('option', '', t('comparison.runLabel', { id: run.runId, shortId: run.runId.slice(-8), date: formatDate(run.startedAt), suite: run.suiteId, target: targetDisplay(run.target), status: i18n.status(run.status) }));
+        option.value = run.runId; select.append(option);
+      }
+      select.value = runs.some((run) => run.runId === selected) ? selected : '';
+      if (selected && !select.value) missing = true;
+    }
+    if (missing) clearComparison();
+    if (!runs.length && !app.comparison) comparisonStatus('comparison.noRuns');
+    comparisonControls();
+  }
+  async function compareRuns() {
+    if (!comparisonValid()) return;
+    const { baseline, current } = comparisonPair(); const locale = i18n.locale(); const request = ++app.comparisonRequest;
+    app.comparisonBusy = true; app.comparison = null; app.comparisonMarkdown = '';
+    comparisonStatus('comparison.loading'); comparisonControls();
+    try {
+      const result = await api(`/api/comparison?baseline=${encodeURIComponent(baseline)}&current=${encodeURIComponent(current)}`);
+      if (request !== app.comparisonRequest || locale !== i18n.locale() || baseline !== $('compare-baseline').value || current !== $('compare-current').value) return;
+      app.comparison = result.comparison; app.comparisonMarkdown = result.markdown;
+      comparisonStatus('comparison.ready'); renderComparison();
+    } catch (error) {
+      if (request === app.comparisonRequest && locale === i18n.locale() && baseline === $('compare-baseline').value && current === $('compare-current').value) comparisonStatus('comparison.error', { message: error instanceof Error ? error.message : String(error) }, true);
+    } finally { if (request === app.comparisonRequest) { app.comparisonBusy = false; comparisonControls(); } }
+  }
+  function renderComparison() {
+    const result = app.comparison; if (!result) { comparisonControls(); return; }
+    const warnings = $('comparison-warnings'); replace(warnings);
+    for (const code of result.warnings || []) warnings.append(el('p', 'comparison-warning', t(comparisonWarningKeys[code] || 'comparison.warningUnknown', { code })));
+    const summary = $('comparison-summary'); replace(summary);
+    const meta = el('p', 'comparison-meta', `${result.baseline.runId} · ${formatDate(result.baseline.startedAt)} → ${result.current.runId} · ${formatDate(result.current.startedAt)}`); summary.append(meta);
+    const counts = el('div', 'comparison-counts');
+    for (const category of comparisonCategories) {
+      const item = el('div', 'comparison-count');
+      item.append(el('strong', '', String(result.counts?.[category] ?? 0)), el('span', '', t(comparisonCategoryKeys[category]))); counts.append(item);
+    }
+    summary.append(counts);
+    const host = $('comparison-content'); replace(host);
+    const selected = $('comparison-filter').value;
+    const cases = (result.cases || []).filter((item) => !selected || item.category === selected);
+    if (!cases.length) host.append(el('p', 'empty', t('comparison.noCases')));
+    for (const item of cases) {
+      const section = el('section', 'case-report comparison-case'); section.dataset.category = item.category;
+      section.append(el('h3', '', `${item.id} · ${t(comparisonCategoryKeys[item.category] || 'comparison.changed')} · ${t('comparison.pair', { baseline: item.baseline ? i18n.status(item.baseline.status) : t('comparison.notPresent'), current: item.current ? i18n.status(item.current.status) : t('comparison.notPresent') })}`));
+      for (const [side, entry] of [['baseline', item.baseline], ['current', item.current]]) {
+        if (!entry) continue;
+        section.append(el('p', '', t(side === 'baseline' ? 'comparison.baselineCase' : 'comparison.currentCase', { title: entry.title, status: i18n.status(entry.status) })));
+        if (entry.expected?.length) { const list = el('ul', 'compact-list'); for (const value of entry.expected) list.append(el('li', '', String(value))); section.append(el('p', '', t('app.expected')), list); }
+        if (entry.reason) section.append(el('p', '', t('comparison.reason', { value: entry.reason })));
+      }
+      host.append(section);
+    }
+    comparisonControls();
+  }
+  async function downloadComparisonMarkdown() {
+    if (!app.comparison || !comparisonValid()) return;
+    const { baseline, current } = comparisonPair(); const locale = i18n.locale(); const request = app.comparisonRequest;
+    try {
+      const result = await api(`/api/comparison?baseline=${encodeURIComponent(baseline)}&current=${encodeURIComponent(current)}`);
+      if (request !== app.comparisonRequest || locale !== i18n.locale() || baseline !== $('compare-baseline').value || current !== $('compare-current').value || !app.comparison) return;
+      app.comparisonMarkdown = result.markdown;
+      download(`${baseline}-to-${current}.md`, result.markdown, 'text/markdown');
+    } catch (error) { if (request === app.comparisonRequest && locale === i18n.locale()) comparisonStatus('comparison.error', { message: error instanceof Error ? error.message : String(error) }, true); }
+  }
   function renderActive() {
     const active = app.state?.active;
     $('active-indicator').textContent = !app.connected ? t('app.disconnected') : active ? `${t(active.status === 'stopping' ? 'app.activeStopping' : active.kind === 'plan' ? 'app.activePlanning' : 'app.activeRunning')}${active.kind === 'run' ? ` · ${active.title}` : ''}` : t(app.planning ? 'app.requestingPlan' : 'top.waiting');
@@ -258,7 +350,7 @@
     const libraryChanged = JSON.stringify(app.state?.suites) !== JSON.stringify(state.suites);
     const historyChanged = JSON.stringify(app.state?.runs) !== JSON.stringify(state.runs);
     app.state = state; app.connected = true;
-    renderActive(); if (libraryChanged) renderLibrary(); if (historyChanged) renderHistory();
+    renderActive(); if (libraryChanged) renderLibrary(); if (historyChanged) { renderHistory(); renderComparisonOptions(); }
     if (full || initialize) { targetOptions(); modelForms(); }
     if (previousActive?.kind === 'run' && !state.active) { if (state.lastError) notice(state.lastError, true); else noticeKey('app.runEnded'); }
     if (state.lastError && state.lastError !== app.lastError) { app.lastError = state.lastError; notice(state.lastError, true); }
@@ -406,7 +498,8 @@
       if (input) { input.focus(); if (Number.isInteger(focus.start)) input.setSelectionRange(focus.start, focus.end); }
     }
     summarize(app.draft, true);
-    renderActive(); targetDescription(); renderLibrary(); renderHistory(); renderReport();
+    renderActive(); targetDescription(); renderLibrary(); renderHistory(); renderComparisonOptions(); renderComparison(); renderReport();
+    if (app.comparisonStatus) comparisonStatus(app.comparisonStatus, app.comparisonStatusParams || {}, app.comparisonStatus === 'comparison.error');
     app.reportMarkdown = '';
     if (app.notice) $('notice').textContent = t(app.notice.key, app.notice.params);
     else if (!$('notice').hidden) notice(''); // A server error has no stable code to translate; the next request uses the selected language.
@@ -417,6 +510,14 @@
     $('library-search').addEventListener('input', renderLibrary);
     $('history-search').addEventListener('input', renderHistory);
     $('history-status-filter').addEventListener('change', renderHistory);
+    for (const id of ['compare-baseline', 'compare-current']) $(id).addEventListener('change', clearComparison);
+    $('compare-btn').addEventListener('click', compareRuns);
+    $('compare-swap').addEventListener('click', () => { const pair = comparisonPair(); $('compare-baseline').value = pair.current; $('compare-current').value = pair.baseline; clearComparison(); });
+    $('comparison-filter').addEventListener('change', renderComparison);
+    $('comparison-md').addEventListener('click', downloadComparisonMarkdown);
+    $('comparison-json').addEventListener('click', () => { if (app.comparison && comparisonValid()) { const { baseline, current } = comparisonPair(); download(`${baseline}-to-${current}.json`, JSON.stringify(app.comparison, null, 2), 'application/json'); } });
+    $('compare-open-baseline').addEventListener('click', () => { if (app.comparison && comparisonValid()) loadReport(app.comparison.baseline.runId); });
+    $('compare-open-current').addEventListener('click', () => { if (app.comparison && comparisonValid()) loadReport(app.comparison.current.runId); });
     $('nav-toggle').addEventListener('click', () => { const open = $('sidebar').classList.toggle('nav-open'); $('nav-toggle').setAttribute('aria-expanded', String(open)); });
     $('library-shortcut').addEventListener('click', () => view('library'));
     $('new-draft-btn').addEventListener('click', () => {
@@ -447,7 +548,7 @@
     $('target-form').addEventListener('submit', saveTarget);
     $('target-kind').addEventListener('change', targetFields); targetFields();
     $('language-select').addEventListener('change', (event) => i18n.setLocale(event.currentTarget.value));
-    i18n.onChange(renderLanguage);
+    i18n.onChange(() => { app.comparisonRequest += 1; if (app.comparisonBusy || app.comparisonStatus === 'comparison.error') comparisonStatus(app.comparison ? 'comparison.ready' : 'comparison.selectBoth'); app.comparisonBusy = false; renderLanguage(); comparisonControls(); });
     let refreshing = false;
     const poll = async () => { if (document.hidden || refreshing) return; refreshing = true; try { await refresh(false); } catch { /* Connection state offers explicit retry; avoid repeated alerts. */ } finally { refreshing = false; } };
     document.addEventListener('visibilitychange', poll);

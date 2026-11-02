@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.2.9
+npm install -g @ihyeon/flow-qa@0.3.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -61,6 +61,16 @@ From version `0.2.7`, **Run history → Run status** filters the loaded reports 
 ### Search run history
 
 From version `0.2.9`, **Run history → Search runs** matches part of a suite ID, run ID, or target name. Matching ignores letter case and surrounding whitespace, and supports Korean target names. Search combines with **Run status**; clear the search to return to the selected status. The query stays through navigation, language changes, and automatic report updates, and resets on page reload. Search covers the most recent 50 reports loaded by the UI, not older records, target URLs, or individual case content. Changing the query keeps the open report and its downloads available.
+
+### Compare two runs
+
+From version `0.3.0`, open **Run history → Compare two runs**, choose a **Baseline run** and **Current run**, then compare. Both selectors use the most recent 50 loaded reports, independently of the history search and status filter. The reports must belong to the same suite ID and recorded target settings: a matching web URL, or mobile platform, app ID, and device. Target display names may differ. Mobile reports record the configured device selector, which can be a name; all mobile comparisons warn that matching selectors do not establish that the same physical device was used. Comparing does not run tests, call a model, or change case review.
+
+Cases are matched by ID. **Newly failed** means only `passed → failed`; **Now passed** means only `failed → passed`. Other status transitions, including flaky, blocked, skipped, and execution errors, appear under **Changed status**. Equal statuses are **Same status**. **Added to current** and **Missing from current** mean present in only one selected report; missing does not mean passed or deleted from the suite. Filter the visible rows by category, open either detailed report for its evidence, or download the complete comparison as Markdown or JSON. Downloads include every category, regardless of the display filter, and do not include evidence files. Markdown follows the existing report URL/link hiding policy; JSON retains the recorded target settings and case text.
+
+When suite hashes differ, the UI and exports warn that steps or expectations may have changed. These are recorded outcomes, not proof of equivalent tests, a product regression, or a fixed defect. Additional warnings identify reversed chronological order and interrupted/error runs. The comparison never treats a flaky pass as a clean pass. The existing report format remains unchanged; comparison JSON uses `flow-qa/comparison-1`.
+
+Swap reverses the baseline and current selections. Changing either selection clears the old result and downloads until a new comparison succeeds. Navigation, language changes, and history updates preserve valid selections and results; a selected run disappearing from the loaded list invalidates the comparison. Choices reset on page reload. Markdown product labels follow the selected language, while user-written case content and status codes are preserved.
 
 ### Import existing case files
 

@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.3.0: compare recorded runs
+
+Adds a two-run comparison workspace to Run history. Select a baseline and current report, swap their direction, filter by case transition, open either detailed report, and export the complete comparison as Markdown or JSON. Cases are matched by ID, with distinct categories for passed-to-failed, failed-to-passed, other changes, equal statuses, added, and missing. Flaky, blocked, skipped, and execution-error results retain their meaning.
+
+The read-only comparison endpoint requires the same suite ID and recorded target settings, rejects ambiguous case IDs, and uses the existing safe report loader. Suite changes, reversed dates, and interrupted/error runs are explicitly flagged. Mobile comparisons also warn that recorded device selectors do not establish physical device identity. Comparisons describe saved outcomes, not proof of a regression or fixed defect. Shared Markdown hides URLs and links under the existing report policy; JSON retains recorded metadata. Selections remain across navigation, language changes, and history updates; selection changes or disappeared runs invalidate old exports, and late responses cannot replace a newer comparison. The existing report format is unchanged.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-02: 101 tests, type checking, UI syntax and design-system audit, existing browser/demo checks, and comparison UI checks using synthetic report fixtures. All 36 terminal-status combinations, compatibility gates, URL/link hiding, English/Korean exports, filtering, polling, navigation, 390px layout, late responses, and stale downloads were covered. A fresh tarball installation ran two real Chromium demo runs (six passing cases) and compared their saved reports. No model calls or native-device execution were used.
+
+- Package: [`@ihyeon/flow-qa@0.3.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.3.0)
+- Release: [GitHub 0.3.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.3.0)
+
 ## 0.2.9: search run history
 
 Adds Search runs to run history, matching suite IDs, run IDs, and target names with case-insensitive partial search. Surrounding whitespace is ignored, and the search combines with the existing status filter. Clearing the query preserves the selected status. The current query stays through navigation, language changes, and automatic history updates; open reports and downloads remain available. Search covers only the most recent 50 reports already loaded by the UI.
@@ -100,7 +111,7 @@ Locally verified on macOS with Node.js 24.14.1 on 2026-10-12: 89 tests, type che
 
 A push to `main` publishes only when `package.json` changes to a new plain `X.Y.Z` version. Pull requests and pushes without a version change run verification without publishing. The package and lockfile versions must agree; the version must increase, and registry errors stop the release. Rerunning a successful publication skips the existing immutable npm version.
 
-The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification matrix on Ubuntu and macOS, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag, requires the registry's `gitHead` to match the workflow commit, and checks the published package with a fresh consumer installation and three real Chromium demo cases. The commit check also applies when retrying an already published version. No npm token is stored in GitHub secrets. After the published package passes its consumer smoke check, a separate job creates the matching GitHub tag and release at the exact verified commit. It preserves existing releases and rejects a tag pointing to another commit. Rerunning an older release does not replace a newer latest release.
+The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification matrix on Ubuntu and macOS, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag, requires the registry's `gitHead` to match the workflow commit, and checks the published package with a fresh consumer installation, two real Chromium demo runs (six cases), and comparison of their saved reports. The commit check also applies when retrying an already published version. No npm token is stored in GitHub secrets. After the published package passes its consumer smoke check, a separate job creates the matching GitHub tag and release at the exact verified commit. It preserves existing releases and rejects a tag pointing to another commit. Rerunning an older release does not replace a newer latest release.
 
 For the next release, update the release notes and current installation examples, then bump the version before committing and pushing:
 

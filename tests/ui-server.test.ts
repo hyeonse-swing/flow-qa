@@ -548,6 +548,72 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
   } finally { await app.close(); }
 });
 
+test('comparison API reads report JSON without Markdown and enforces locale, compatibility, and origin checks', async () => {
+  const app = await fixture();
+  try {
+    const suite = await readSuite(path.join(app.workspace, 'cases', 'task-flow.json'));
+    const makeReport = async (runId: string, status: 'passed' | 'failed') => {
+      const runDir = path.join(app.workspace, '.flowqa', 'runs', runId);
+      await mkdir(runDir, { recursive: true });
+      const result = failureReport({ suite, runId, suiteHash: 'a'.repeat(64),
+        target: { name: 'demo', url: 'http://127.0.0.1:4178' },
+        startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:01:00.000Z',
+        blockedReasons: new Map() }, 'failed', 'Test failed');
+      result.cases[0]!.status = status;
+      result.cases[0]!.attempts.push({ index: 0, status, startedAt: '', durationMs: 1, secondaryErrors: [], steps: [],
+        artifacts: [{ kind: 'log', redaction: 'complete', path: 'raw/artifacts/private.txt' }] });
+      await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(result));
+      return { runDir, result };
+    };
+    const baseline = randomUUID();
+    const current = randomUUID();
+    const before = await makeReport(baseline, 'passed');
+    const after = await makeReport(current, 'failed');
+    const route = `/api/comparison?baseline=${baseline}&current=${current}`;
+    const english = await fetch(`${app.server.url}${route}`);
+    assert.equal(english.status, 200);
+    assert.equal(english.headers.get('cache-control'), 'no-store');
+    const payload = await english.json() as { comparison: { schemaVersion: string; counts: Record<string, number>; cases: { id: string; category: string }[] }; markdown: string };
+    assert.equal(payload.comparison.schemaVersion, 'flow-qa/comparison-1');
+    assert.equal(payload.comparison.counts['newly-failed'], 1);
+    assert.equal(payload.comparison.cases[0]?.category, 'newly-failed');
+    assert.match(payload.markdown, /QA run comparison/);
+    assert.doesNotMatch(JSON.stringify(payload), /private\.txt|attempts|artifacts/);
+    const korean = await fetch(`${app.server.url}${route}`, { headers: { 'accept-language': 'ko' } });
+    assert.equal(korean.status, 200);
+    const koPayload = await korean.json() as typeof payload;
+    assert.deepEqual(koPayload.comparison, payload.comparison);
+    assert.match(koPayload.markdown, /QA 실행 비교/);
+
+    assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=${baseline}`)).status, 400);
+    assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=..%2Fetc&current=${current}`)).status, 400);
+    assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=${baseline}&current=${baseline}`)).status, 400);
+    const sameKo = await fetch(`${app.server.url}/api/comparison?baseline=${baseline}&current=${baseline}`, { headers: { 'accept-language': 'ko' } });
+    assert.match((await sameKo.json() as { error: string }).error, /서로 다른 두 실행/);
+    assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=${baseline}&current=${randomUUID()}`)).status, 404);
+    assert.equal((await fetch(`${app.server.url}${route}`, { headers: { origin: 'https://evil.example' } })).status, 403);
+    assert.equal((await fetch(`${app.server.url}${route}`, { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
+    assert.equal(await statusWithHost(`${app.server.url}${route}`, 'evil.example'), 403);
+
+    after.result.suiteId = 'different-suite';
+    await writeFile(path.join(after.runDir, 'qa-report.json'), JSON.stringify(after.result));
+    const incompatible = await fetch(`${app.server.url}${route}`, { headers: { 'accept-language': 'ko' } });
+    assert.equal(incompatible.status, 409);
+    assert.match((await incompatible.json() as { error: string }).error, /케이스 모음/);
+    after.result.suiteId = before.result.suiteId;
+    after.result.target = { name: 'other', url: 'https://other.example' };
+    await writeFile(path.join(after.runDir, 'qa-report.json'), JSON.stringify(after.result));
+    assert.equal((await fetch(`${app.server.url}${route}`)).status, 409);
+
+    const outside = await mkdtemp(path.join(tmpdir(), 'flowqa-comparison-outside-'));
+    try {
+      const linkedRun = randomUUID();
+      await symlink(outside, path.join(app.workspace, '.flowqa', 'runs', linkedRun));
+      assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=${baseline}&current=${linkedRun}`)).status, 404);
+    } finally { await rm(outside, { recursive: true, force: true }); }
+  } finally { await app.close(); }
+});
+
 test('artifact route serves only report-approved local evidence with safe response headers', async () => {
   const app = await fixture();
   try {
