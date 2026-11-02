@@ -281,9 +281,11 @@ try {
     const runId = randomUUID();
     const folder = path.join(workspace, '.flowqa/runs', runId);
     historyFixtures.push(folder);
-    await writeJSON(path.join(folder, 'qa-report.json'), { ...report, runId, suiteId: `history-${suffix}`, status, cases: [], errors: [] });
+    await writeJSON(path.join(folder, 'qa-report.json'), { ...report, runId, suiteId: `history-${suffix}`, target: { ...report.target, name: `검증-${suffix}` }, status, cases: [], errors: [] });
+    return runId;
   };
-  for (const status of ['failed', 'blocked', 'error', 'interrupted']) await addHistoryFixture(status);
+  const historyFixtureIds = new Map();
+  for (const status of ['failed', 'blocked', 'error', 'interrupted']) historyFixtureIds.set(status, await addHistoryFixture(status));
   await page.waitForFunction(() => document.querySelector('#history-list .list-row strong')?.textContent === 'history-failed · failed');
   for (const status of ['passed', 'failed', 'blocked', 'error', 'interrupted']) {
     await historyFilter.selectOption(status);
@@ -291,7 +293,37 @@ try {
   }
   await historyFilter.selectOption('');
   assert.equal(await page.locator('#history-list .list-row').count(), 5, 'All statuses restores every loaded report.');
+  const historySearch = page.getByRole('searchbox', { name: 'Search runs', exact: true });
+  await historySearch.fill('  HiStOrY-bLoCkEd  ');
+  assert.deepEqual(await page.locator('#history-list .list-row strong').allTextContents(), ['history-blocked · blocked'], 'Run search matches suite IDs regardless of case or surrounding whitespace.');
+  await historySearch.fill(historyFixtureIds.get('error').toUpperCase());
+  assert.deepEqual(await page.locator('#history-list .list-row strong').allTextContents(), ['history-error · error'], 'Run search matches a run ID independently of its suite.');
+  await historySearch.fill('검증-failed');
+  assert.deepEqual(await page.locator('#history-list .list-row strong').allTextContents(), ['history-failed · failed'], 'Run search matches Korean target names.');
+  await historyFilter.selectOption('blocked');
+  assert.equal(await page.locator('#history-list .list-row').count(), 0, 'Search and status both restrict results.');
+  assert.match(await page.locator('#history-list .empty').textContent(), /search and status/i);
+  await page.locator('#language-select').selectOption('ko');
+  assert.equal(await page.getByRole('searchbox', { name: '실행 기록 검색', exact: true }).inputValue(), '검증-failed');
+  assert.equal(await page.locator('#history-status-filter').inputValue(), 'blocked');
+  assert.match(await page.locator('#history-list .empty').textContent(), /검색어와 상태/);
+  await page.locator('#history-status-filter').selectOption('failed');
+  assert.equal(await page.locator('#history-list .list-row').count(), 1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Run search and status fit a mobile viewport.');
+  await page.screenshot({ path: path.join(artifacts, 'history-search-ko-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('[data-view="library"]').click();
+  await page.locator('[data-view="history"]').click();
+  assert.equal(await page.locator('#history-search').inputValue(), '검증-failed', 'Navigation preserves the run search.');
+  await page.locator('#language-select').selectOption('en');
+  await historySearch.fill('');
+  assert.equal(await page.locator('#history-list .list-row').count(), 1, 'Clearing search preserves the selected status.');
+  await historyFilter.selectOption('');
+  await historySearch.fill('   ');
+  assert.equal(await page.locator('#history-list .list-row').count(), 5, 'Whitespace with All statuses restores the full loaded list.');
   await historyFilter.selectOption('failed');
+  await historySearch.fill('검증-failed');
   await addHistoryFixture('failed', 'failed-later');
   await page.waitForFunction(() => document.querySelectorAll('#history-list .list-row').length === 2);
   assert.deepEqual((await page.locator('#history-list .list-row strong').allTextContents()).sort(), ['history-failed · failed', 'history-failed-later · failed'].sort(), 'Polling applies the selected status to newly saved reports.');
@@ -299,6 +331,7 @@ try {
   for (const folder of historyFixtures) await rm(folder, { recursive: true, force: true });
   await page.waitForFunction(() => document.querySelectorAll('#history-list .list-row').length === 0);
   await historyFilter.selectOption('passed');
+  await historySearch.fill(report.runId);
   assert.equal(await page.locator('#history-list .list-row').count(), 1);
   assert.equal(await hasBeforeUnloadWarning(), false, 'Filtering reports does not modify the saved scenario.');
   assert.equal(await page.locator('#review-checkbox').isChecked(), true, 'Filtering preserves the scenario review state.');
@@ -316,7 +349,13 @@ try {
   await page.locator('#language-select').selectOption('en');
   assert.match(await downloadReport(), /^# QA results:/);
   assert.equal(await page.locator('#history-status-filter').inputValue(), 'passed', 'Opening and downloading a report preserves the filter.');
+  assert.equal(await historySearch.inputValue(), report.runId, 'Opening and downloading a report preserves the search.');
   const openReportHeading = await page.locator('#report-heading').textContent();
+  await historySearch.fill('no-matching-run');
+  assert.equal(await page.locator('#history-list .list-row').count(), 0);
+  assert.equal(await page.locator('#report-heading').textContent(), openReportHeading, 'Changing search preserves the open report.');
+  assert.match(await downloadReport(), /^# QA results:/);
+  await historySearch.fill('');
   await historyFilter.selectOption('failed');
   assert.equal(await page.locator('#report-panel').isVisible(), true, 'Filtering the list keeps the open report available.');
   assert.equal(await page.locator('#report-heading').textContent(), openReportHeading);
@@ -469,7 +508,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Import UI must fit the mobile viewport.');
   assert.deepEqual(errors, [], 'No browser runtime errors.');
-  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, bulkCaseExpansion: true, bulkCaseExpansionPreservesReview: true, bulkCaseExpansionMobileOverflow: false, librarySearch: true, librarySearchPolling: true, librarySearchMobileOverflow: false, historyStatusFilter: true, historyStatusFilterPolling: true, historyStatusFilterMobileOverflow: false, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
+  const evidence = { defaultLanguage: 'en', languages: ['en', 'ko'], persistence: true, crossTab: true, userInputPreserved: true, bulkCaseExpansion: true, bulkCaseExpansionPreservesReview: true, bulkCaseExpansionMobileOverflow: false, librarySearch: true, librarySearchPolling: true, librarySearchMobileOverflow: false, historySearch: true, historySearchWithStatus: true, historySearchPolling: true, historyStatusFilter: true, historyStatusFilterPolling: true, historyStatusFilterMobileOverflow: false, unsavedDraftWarning: true, draftReplacementConfirmation: true, savedCaseDownloads: true, downloadedCasesReimport: true, reviewPreserved: true, reportDownloadLocale: true, realBrowserCases: 3, status: report.status, importValidation: true, importFlowBytesPreserved: true, importReviewGate: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

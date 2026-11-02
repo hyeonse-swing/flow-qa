@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.2.9: search run history
+
+Adds Search runs to run history, matching suite IDs, run IDs, and target names with case-insensitive partial search. Surrounding whitespace is ignored, and the search combines with the existing status filter. Clearing the query preserves the selected status. The current query stays through navigation, language changes, and automatic history updates; open reports and downloads remain available. Search covers only the most recent 50 reports already loaded by the UI.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-02: 92 tests, type checking, UI syntax and design-system audit, and real Chromium search checks using report fixtures alongside a real passing run. All three fields, Korean target names, case and whitespace handling, combined status filtering, empty results, clearing, navigation, language changes, new reports, filtered report opening and download, and a 390px viewport passed. Existing UI and demo checks, package validation, and a fresh tarball installation with three passing browser cases also passed. No model calls were used.
+
+- Package: [`@ihyeon/flow-qa@0.2.9`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.2.9)
+- Release: [GitHub 0.2.9](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.2.9)
+
 ## 0.2.8: expand and collapse all case details
 
 Adds Expand all cases and Collapse all cases to Scenario case review. The controls appear when cases are available and change only the case details. Individual toggles, the first-case-open default on loading, and expansion state across language changes and navigation remain available. Bulk actions preserve the draft, JSON editor disclosure, review confirmation, and execution readiness.
