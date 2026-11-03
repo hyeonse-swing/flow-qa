@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { PlannerError } from '../src/planner.ts';
 import { failureReport, renderMarkdown } from '../src/report.ts';
+import { selectCases } from '../src/case-selection.ts';
 import { targetFingerprint } from '../src/targets.ts';
 import type { Config, Suite } from '../src/schema.ts';
 import { startUIServer, type UIServerHandle } from '../src/ui/server.ts';
@@ -546,6 +547,68 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
     try { assert.equal((await state(restarted)).runs.length, 1); }
     finally { await restarted.close(); }
   } finally { await app.close(); }
+});
+
+test('selected run API validates IDs and review gates, preserves full snapshots, and exposes partial scope', async () => {
+  let observed: { suite: Suite; caseIds?: readonly string[] } | undefined;
+  const captured = (): typeof observed => observed;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const app = await fixture({ workspace: '', run: async ({ workspace, suite, caseIds }) => {
+    observed = { suite, caseIds };
+    await gate;
+    const selected = selectCases(suite, caseIds);
+    const runId = randomUUID();
+    const runDir = path.join(workspace, '.flowqa/runs', runId);
+    await mkdir(runDir, { recursive: true });
+    const report = failureReport({ suite: selected.suite, runId, suiteHash: sha256(`${JSON.stringify(suite, null, 2)}\n`),
+      target: { name: 'demo', url: 'http://127.0.0.1:3000' }, startedAt: '2026-11-03T00:00:00Z', finishedAt: '2026-11-03T00:00:01Z', blockedReasons: new Map(),
+      ...(selected.selection ? { selection: selected.selection } : {}) }, 'interrupted', 'Stopped');
+    await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(report));
+    await writeFile(path.join(runDir, 'qa-report.md'), renderMarkdown(report));
+    return { runDir, report };
+  } });
+  try {
+    const source = await readSuite(path.join(app.workspace, 'cases/task-flow.json'));
+    const originalFile = await readFile(path.join(app.workspace, 'cases/task-flow.json'), 'utf8');
+    const ids = source.cases.map(item => item.id);
+    const suiteHash = await reviewedSuiteHash(app.server);
+    const target = (await state(app.server)).targets[0]!;
+    const body = { suite: 'task-flow.json', suiteHash, targetName: target.name, targetFingerprint: target.targetFingerprint };
+    for (const caseIds of [[], ['unknown'], [ids[0], ids[0]], [''], 'all', null]) {
+      assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds })).status, 400);
+      assert.equal(observed, undefined);
+    }
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, suiteHash: '0'.repeat(64), caseIds: [ids[0]] })).status, 409);
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, targetFingerprint: '0'.repeat(64), caseIds: [ids[0]] })).status, 409);
+    assert.equal((await post(app.server, 'wrong', '/api/run', { ...body, caseIds: [ids[0]] })).status, 403);
+    assert.equal(observed, undefined);
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds: [ids[2], ids[0]] })).status, 202);
+    assert.deepEqual(captured()?.caseIds, [ids[0], ids[2]]);
+    assert.equal(captured()?.suite.cases.length, 3);
+    await writeFile(path.join(app.workspace, 'cases/task-flow.json'), JSON.stringify({ ...source, title: 'Later edit' }));
+    assert.equal(captured()?.suite.title, source.title);
+    release();
+    let final = await state(app.server);
+    for (let i = 0; i < 100 && final.active; i++) { await new Promise(resolve => setTimeout(resolve, 10)); final = await state(app.server); }
+    assert.equal(final.active, null);
+    const runId = final.lastRunId!;
+    const response = await fetch(`${app.server.url}/api/report?runId=${runId}`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload.report.selection, { caseIds: [ids[0], ids[2]], totalCases: 3 });
+    assert.deepEqual(payload.report.cases.map((item: {id:string}) => item.id), [ids[0], ids[2]]);
+    assert.match(payload.markdown, /2.*3/);
+    assert.deepEqual((final.runs[0] as unknown as {selection:unknown}).selection, payload.report.selection);
+    const reportFile = path.join(app.workspace, '.flowqa/runs', runId, 'qa-report.json');
+    await writeFile(reportFile, JSON.stringify({ ...payload.report, selection: { caseIds: [ids[0]], totalCases: 3 } }));
+    assert.equal((await fetch(`${app.server.url}/api/report?runId=${runId}`)).status, 404, 'Incoherent scope must not be shown as a valid run.');
+    assert.equal((await state(app.server)).runs.length, 0);
+    await writeFile(path.join(app.workspace, 'cases/task-flow.json'), originalFile);
+    observed = undefined;
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds: [...ids].reverse() })).status, 202);
+    assert.equal(captured()?.caseIds, undefined, 'Selecting every case normalizes to a legacy full run.');
+  } finally { release(); await app.close(); }
 });
 
 test('comparison API reads report JSON without Markdown and enforces locale, compatibility, and origin checks', async () => {

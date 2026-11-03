@@ -1,10 +1,11 @@
 import { localized, type Locale } from './i18n.ts';
+import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import type { QACase, QACaseStatus, QAReport, QAStatus } from './report.ts';
 import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
 
 export const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'] as const;
 export type ComparisonCategory = (typeof comparisonCategories)[number];
-export type ComparisonWarning = 'suite-changed' | 'reverse-order' | 'incomplete-run' | 'mobile-identity-unverified';
+export type ComparisonWarning = 'suite-changed' | 'partial-run' | 'selection-changed' | 'reverse-order' | 'incomplete-run' | 'mobile-identity-unverified';
 
 export interface ComparisonRun {
   runId: string;
@@ -14,6 +15,7 @@ export interface ComparisonRun {
   startedAt: string;
   finishedAt: string;
   status: QAStatus;
+  selection?: RunSelection;
 }
 
 export interface ComparisonCaseSnapshot {
@@ -60,6 +62,7 @@ function runSummary(report: QAReport): ComparisonRun {
     runId: report.runId, suiteId: report.suiteId, suiteHash: report.suiteHash,
     target: { ...report.target }, startedAt: report.startedAt,
     finishedAt: report.finishedAt, status: report.status,
+    ...(report.selection ? { selection: { caseIds: [...report.selection.caseIds], totalCases: report.selection.totalCases } } : {}),
   };
 }
 
@@ -92,8 +95,15 @@ export function compareReports(baseline: QAReport, current: QAReport): RunCompar
   }
   const before = validateCaseIds(baseline);
   const after = validateCaseIds(current);
+  if (!isReportSelectionValid(baseline.cases, baseline.selection) || !isReportSelectionValid(current.cases, current.selection)) {
+    throw new ComparisonError(409, 'The report selection does not match its recorded cases.');
+  }
   const warnings: ComparisonWarning[] = [];
   if (baseline.suiteHash !== current.suiteHash) warnings.push('suite-changed');
+  if (baseline.selection || current.selection) {
+    warnings.push('partial-run');
+    if (before.size !== after.size || [...before.keys()].some((id) => !after.has(id))) warnings.push('selection-changed');
+  }
   if (Date.parse(current.startedAt) < Date.parse(baseline.startedAt)) warnings.push('reverse-order');
   if (baseline.status === 'interrupted' || baseline.status === 'error' || current.status === 'interrupted' || current.status === 'error') {
     warnings.push('incomplete-run');
@@ -137,10 +147,16 @@ export function renderComparisonMarkdown(comparison: RunComparison, locale: Loca
     `- ${label('Started', '시작')}: ${safe(item.startedAt)}`,
     `- ${label('Finished', '종료')}: ${safe(item.finishedAt)}`,
     `- ${label('Status', '상태')}: ${safe(item.status)}`,
+    ...(item.selection ? [`- ${label('Scope', '범위')}: ${label(
+      `Selected ${item.selection.caseIds.length} / ${item.selection.totalCases} cases; full suite not evaluated.`,
+      `선택 ${item.selection.caseIds.length} / 전체 ${item.selection.totalCases}개 케이스; 전체 케이스 모음은 평가하지 않았습니다.`,
+    )}`] : []),
     '',
   ];
   const warningText: Record<ComparisonWarning, string> = {
     'suite-changed': label('Steps or expectations may differ because the suite changed; these outcomes do not prove a regression or fix.', '케이스 모음이 변경되어 단계나 기대 결과가 다를 수 있습니다. 이 결과만으로 회귀나 수정이 입증되지는 않습니다.'),
+    'partial-run': label('At least one run evaluated only selected cases; the full suite was not evaluated.', '하나 이상의 실행에서 선택한 케이스만 평가했습니다. 전체 케이스 모음은 평가하지 않았습니다.'),
+    'selection-changed': label('The runs selected different case sets; added or missing entries may reflect scope rather than a changed outcome.', '실행마다 선택한 케이스가 다릅니다. 추가 또는 누락 항목은 결과 변화가 아닌 실행 범위 차이일 수 있습니다.'),
     'reverse-order': label('The selected current run started before the baseline run.', '선택한 현재 실행이 기준 실행보다 먼저 시작됐습니다.'),
     'incomplete-run': label('At least one run ended with error or interruption; case results may be incomplete.', '하나 이상의 실행이 오류 또는 중단으로 끝나 케이스 결과가 불완전할 수 있습니다.'),
     'mobile-identity-unverified': label('The recorded app and device settings match, but these reports do not verify that both runs used the same physical device.', '기록된 앱과 기기 설정은 같지만, 두 실행이 같은 실제 기기에서 진행됐는지는 이 리포트로 확인할 수 없습니다.'),

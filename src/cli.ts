@@ -10,6 +10,7 @@ import { configSchema, idSchema, modelSchema, targetSchema } from './schema.ts';
 import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, writeConfig, writeJSON } from './workspace.ts';
 import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
+import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-selection.ts';
 import { runSuite } from './engine.ts';
 import { renderMarkdown, type QAReport } from './report.ts';
 import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
@@ -30,6 +31,7 @@ Usage: flow-qa <command> [arguments] [options]
   validate <cases.json>               Check case structure and assertions
   generate <cases.json> [--out test.ts] Generate e2e test code
   run <cases.json> --target <name>     Run against a registered target and save a QA report
+      [--case <id> ...]               Run only the selected case IDs (repeat --case for more)
   report <run-directory>              View a saved QA report
   compare <run-a> <run-b>              Compare case results
   ui [--demo] [--port 4310]           Start the local QA UI
@@ -55,6 +57,7 @@ Local example: flow-qa ui --demo
   validate <cases.json>               케이스 구조와 검증 조건 확인
   generate <cases.json> [--out test.ts] e2e 테스트 코드 생성
   run <cases.json> --target <name>     연결한 대상에서 실행하고 QA 리포트 저장
+      [--case <id> ...]               선택한 케이스만 실행 (--case를 반복해 여러 개 선택)
   report <run-directory>              저장된 QA 리포트 보기
   compare <run-a> <run-b>             케이스별 결과 비교
   ui [--demo] [--port 4310]           로컬 QA 화면 실행
@@ -119,6 +122,7 @@ export async function main(args: string[]): Promise<void> {
     const { positionals, values } = parseArgs({ args, allowPositionals: true, strict: true, options: {
       workspace: { type: 'string' }, url: { type: 'string' }, model: { type: 'string' },
       'key-env': { type: 'string' }, out: { type: 'string' }, target: { type: 'string' },
+      case: { type: 'string', multiple: true },
       platform: { type: 'string' }, 'bundle-id': { type: 'string' }, device: { type: 'string' },
       'prompt-only': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
       demo: { type: 'boolean' }, port: { type: 'string' }, 'with-deps': { type: 'boolean' }, lang: { type: 'string' },
@@ -134,7 +138,7 @@ export async function main(args: string[]): Promise<void> {
         (values['bundle-id'] !== undefined || values.device !== undefined) && command !== 'connect') {
       throw new Error(localized(locale, 'Platform and device options are only supported by connect and plan. See --help.', '플랫폼·기기 옵션은 connect와 plan에서만 사용할 수 있습니다. --help를 참고하세요.'));
     }
-    if (values.demo && command !== 'ui' || values.port && command !== 'ui' ||
+    if (values.case !== undefined && command !== 'run' || values.demo && command !== 'ui' || values.port && command !== 'ui' ||
       values['with-deps'] && (command !== 'browser' || arg !== 'install')) throw new Error(localized(locale, 'This option is not supported for the command. See --help.', '이 명령에서 사용할 수 없는 옵션입니다. --help를 참고하세요.'));
     if (command === 'ui') {
       if (arg || second) throw new Error(localized(locale, 'The ui command does not accept positional arguments.', 'ui 명령에는 위치 인자를 사용할 수 없습니다.'));
@@ -214,11 +218,19 @@ export async function main(args: string[]): Promise<void> {
       }
       const config = await readConfig(workspace);
       const targetName = values.target ?? (Object.keys(config.targets).length === 1 ? Object.keys(config.targets)[0] : undefined);
+      let caseIds: string[] | undefined;
+      try { caseIds = selectCases(suite, values.case).selection?.caseIds; }
+      catch (error) {
+        if (error instanceof CaseSelectionError) throw new Error(localizeProductMessage('Select one or more unique cases from this suite.', locale));
+        throw error;
+      }
       const controller = new AbortController();
       const interrupt = () => controller.abort();
       process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
       try {
-        const { report, runDir } = await runSuite({ workspace, suite, config, targetName: required(targetName, '--target', locale), signal: controller.signal });
+        const { report, runDir } = await runSuite({ workspace, suite, config, targetName: required(targetName, '--target', locale), signal: controller.signal,
+          ...(caseIds ? { caseIds } : {}) });
+        if (report.selection) console.log(localized(locale, `Selected run: ${report.selection.caseIds.length}/${report.selection.totalCases} cases; the full suite was not evaluated.`, `선택 실행: ${report.selection.totalCases}개 중 ${report.selection.caseIds.length}개. 전체 케이스를 검증한 결과가 아닙니다.`));
         console.log(localized(locale, `Run result: ${report.status}\nQA report: ${resolve(runDir, 'qa-report.md')}\nRaw result: ${resolve(runDir, 'qa-report.json')}`, `실행 결과: ${report.status}\nQA 리포트: ${resolve(runDir, 'qa-report.md')}\n원본 결과: ${resolve(runDir, 'qa-report.json')}`));
         process.exitCode = report.status === 'passed' ? 0 : report.status === 'interrupted' ? 130 : 1;
       } finally { process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt); }
@@ -240,11 +252,14 @@ export async function main(args: string[]): Promise<void> {
         if (!data.target || typeof data.target.name !== 'string') throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
         const { name: _targetName, ...identity } = data.target;
         if (!targetSchema.safeParse(identity).success) throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
-        return data as { suiteHash: string; suiteId: string; target: ReportTarget; cases: { id: string; status: string }[] };
+        if (!isReportSelectionValid(data.cases, data.selection)) throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
+        return data as QAReport;
       };
       const before = await load(arg), after = await load(second);
-      const comparable = before.suiteHash === after.suiteHash && targetFingerprint(before.target) === targetFingerprint(after.target);
-      console.log(comparable ? localized(locale, 'Comparing the same suite and target (check external data state separately)', '동일 명세·대상 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite or target differs; no direct regression verdict is made.', '명세 또는 대상이 달라 직접적인 회귀 판정은 하지 않습니다.'));
+      const sameSelection = JSON.stringify(before.cases.map((item) => item.id).sort()) === JSON.stringify(after.cases.map((item) => item.id).sort());
+      const comparable = before.suiteId === after.suiteId && before.suiteHash === after.suiteHash && targetFingerprint(before.target) === targetFingerprint(after.target) && sameSelection;
+      console.log(comparable ? localized(locale, 'Comparing the same suite, target and case selection (check external data state separately)', '동일 명세·대상·케이스 범위 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite, target or case selection differs; no direct regression verdict is made.', '명세·대상 또는 케이스 범위가 달라 직접적인 회귀 판정은 하지 않습니다.'));
+      if (before.selection || after.selection) console.log(localized(locale, 'This comparison includes selected cases only; omitted cases were not evaluated.', '이 비교에는 선택 실행이 포함되어 있습니다. 미선택 케이스는 검증되지 않았습니다.'));
       const previous = new Map(before.cases.map((c) => [c.id, c.status]));
       const current = new Map(after.cases.map((c) => [c.id, c.status]));
       for (const id of new Set([...previous.keys(), ...current.keys()])) console.log(`${safeText(id)}: ${safeText(previous.get(id) ?? localized(locale, 'not included', '미포함'))} → ${safeText(current.get(id) ?? localized(locale, 'not included', '미포함'))}`);

@@ -123,7 +123,26 @@ try {
   const koreanComparison = await fetch(url + comparisonRoute, { headers: { 'Accept-Language': 'ko' } });
   assert.equal(koreanComparison.status, 200);
   assert.match((await koreanComparison.json()).markdown, /비교/);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 6, runs: 2, comparison: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const partialRun = await fetch(url + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flowqa-token': state.csrfToken }, body: JSON.stringify({ suite: 'task-flow.json', suiteHash: suite.suiteHash, targetName: 'demo', targetURL: state.targets[0].url, caseIds: ['TC-002'] }) });
+  assert.equal(partialRun.status, 202);
+  const partialDeadline = Date.now() + 90_000;
+  do {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    finalState = await (await get('/api/state')).json();
+  } while (finalState.active && Date.now() < partialDeadline);
+  assert.equal(finalState.active, null, 'Installed selected run timed out.');
+  const partial = await (await get('/api/report?runId=' + finalState.lastRunId)).json();
+  assert.equal(partial.report.status, 'passed');
+  assert.equal(partial.report.suiteHash, report.suiteHash);
+  assert.deepEqual(partial.report.selection, { caseIds: ['TC-002'], totalCases: 3 });
+  assert.deepEqual(partial.report.cases.map(item => item.id), ['TC-002']);
+  assert.match(partial.markdown, /[Ss]elected|[Pp]artial/);
+  const partialComparison = await (await get('/api/comparison?' + new URLSearchParams({ baseline: report.runId, current: partial.report.runId }))).json();
+  assert.ok(partialComparison.comparison.warnings.includes('partial-run'));
+  assert.ok(partialComparison.comparison.warnings.includes('selection-changed'));
+  assert.equal(partialComparison.comparison.counts.missing, 2);
+  assert.equal(partialComparison.comparison.counts.unchanged, 1);
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

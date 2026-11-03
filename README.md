@@ -16,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.3.0
+npm install -g @ihyeon/flow-qa@0.4.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -61,6 +61,12 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command and provide that environment variable to the process. The config stores the variable's name, not its value. The flow is sent to the planner endpoint you chose. Natural-language browser action (`act`) and model judgment (`assertAgent`) require a **separately configured** `agent` model that supports tools and images. Fixed clicks, inputs, and assertions run without a model.
 
 `flow-qa doctor --workspace my-qa` checks local dependencies and whether configured model-key environment variables are present. It does not print key values or call the model server; a present key does not confirm remote authentication.
+
+## Run selected cases
+
+From `0.4.0`, choose cases under **Scenario → Review, then run → Cases to run**. Every case starts selected. Clear or change the selection, review it, then run against your target. Selecting cases never edits the saved suite or implicitly runs prerequisite cases. Each case must establish its own starting state.
+
+The CLI supports repeated IDs: `flow-qa run cases/task-flow.json --target demo --case TC-001 --case TC-003`. Omit `--case` to run the complete suite. Reports and comparisons label partial runs explicitly; a selected-run pass does not evaluate omitted cases. See the [UI guide](docs/ui.md#run-selected-cases).
 
 ## Compare recorded runs
 

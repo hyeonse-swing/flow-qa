@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { expectedChecks } from './compiler.ts';
+import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import { localized, localizeProductMessage, type Locale } from './i18n.ts';
 import type { Suite } from './schema.ts';
 import { targetLabel, type ReportTarget } from './targets.ts';
@@ -59,6 +60,7 @@ export interface QAReport {
   status: QAStatus;
   cases: QACase[];
   errors: string[];
+  selection?: RunSelection;
   usage?: { modelTokens: number; modelCachedTokens?: number; estimatedCostUsd?: number };
 }
 
@@ -72,6 +74,19 @@ export interface ReportContext {
   rawDir: string;
   testFile: string;
   blockedReasons: ReadonlyMap<string, string>;
+  selection?: RunSelection;
+}
+
+function scopedCases(context: Pick<ReportContext, 'suite' | 'selection'>): Suite['cases'] {
+  if (!context.selection) return context.suite.cases;
+  const selected = new Set(context.selection.caseIds);
+  const cases = context.suite.cases.filter((testCase) => selected.has(testCase.id));
+  if (!isReportSelectionValid(cases, context.selection)) throw new Error('Report selection does not match the current suite.');
+  return cases;
+}
+
+function reportSelection(context: Pick<ReportContext, 'selection'>): { selection?: RunSelection } {
+  return context.selection ? { selection: { caseIds: [...context.selection.caseIds], totalCases: context.selection.totalCases } } : {};
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -214,7 +229,8 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
   const rawResults = array(run.results, 'run.results');
   const rawErrors = array(run.errors, 'run.errors').map(rawError);
   const sourceName = path.basename(context.testFile);
-  const knownTitles = new Map(context.suite.cases.map((testCase) => [`[${testCase.id}] ${testCase.title}`, testCase.id]));
+  const selectedCases = scopedCases(context);
+  const knownTitles = new Map(selectedCases.map((testCase) => [`[${testCase.id}] ${testCase.title}`, testCase.id]));
   const mapped = new Map<string, { status: (typeof resultStatuses)[number]; attempts: QAAttempt[]; reason?: string }>();
 
   for (const value of rawResults) {
@@ -247,7 +263,7 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
   }
 
   const errors = rawErrors.map((error) => `${error.code}: ${error.message}`);
-  const cases: QACase[] = context.suite.cases.map((testCase) => {
+  const cases: QACase[] = selectedCases.map((testCase) => {
     const expected = expectedChecks(testCase);
     const result = mapped.get(testCase.id);
     const blockedReason = context.blockedReasons.get(testCase.id);
@@ -279,7 +295,7 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
   return {
     schemaVersion: 'flow-qa/report-1', runId: context.runId, suiteId: context.suite.id,
     suiteHash: context.suiteHash, target: context.target, startedAt: context.startedAt,
-    finishedAt: context.finishedAt, status, cases, errors, usage: reportUsage,
+    finishedAt: context.finishedAt, status, cases, errors, usage: reportUsage, ...reportSelection(context),
   };
 }
 
@@ -297,13 +313,13 @@ export function failureReport(context: Omit<ReportContext, 'rawDir' | 'testFile'
     schemaVersion: 'flow-qa/report-1', runId: context.runId, suiteId: context.suite.id,
     suiteHash: context.suiteHash, target: context.target, startedAt: context.startedAt,
     finishedAt: context.finishedAt, status,
-    cases: context.suite.cases.map((testCase) => ({
+    cases: scopedCases(context).map((testCase) => ({
       id: testCase.id, title: testCase.title,
       status: context.blockedReasons.has(testCase.id) ? 'blocked' : 'error',
       expected: expectedChecks(testCase), attempts: [],
       reason: context.blockedReasons.get(testCase.id) ?? error,
     })),
-    errors: [error],
+    errors: [error], ...reportSelection(context),
   };
 }
 
@@ -337,6 +353,10 @@ export function renderMarkdown(report: QAReport, locale: Locale = 'en'): string 
       ? safe(targetLabel(report.target))
       : label('(URL available in the local JSON report)', '(주소는 로컬 JSON 보고서에서 확인)')}`,
     `- ${label('Status', '상태')}: ${safe(report.status)}`,
+    ...(report.selection ? [`- ${label('Scope', '범위')}: ${label(
+      `Selected ${report.selection.caseIds.length} / ${report.selection.totalCases} cases; full suite not evaluated.`,
+      `선택 ${report.selection.caseIds.length} / 전체 ${report.selection.totalCases}개 케이스; 전체 케이스 모음은 평가하지 않았습니다.`,
+    )}`] : []),
     `- ${label('Started', '시작')}: ${safe(report.startedAt)}`,
     `- ${label('Finished', '종료')}: ${safe(report.finishedAt)}`,
     `- ${label('Results', '결과')}: ${label('passed', '통과')} ${counts.get('passed') ?? 0}, ${label('failed', '실패')} ${counts.get('failed') ?? 0}, ${label('flaky', '재시도 후 통과')} ${counts.get('flaky') ?? 0}, ${label('blocked', '차단')} ${counts.get('blocked') ?? 0}, ${label('skipped', '건너뜀')} ${counts.get('skipped') ?? 0}, ${label('error', '오류')} ${counts.get('error') ?? 0}`,

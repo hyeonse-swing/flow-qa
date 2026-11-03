@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,40 @@ import { playwrightInstallInvocation } from '../src/cli.ts';
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL('../bin/flow-qa.mjs', import.meta.url));
+test('CLI selects repeated case IDs without executing or hiding unselected cases as passes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-select-cli-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
+  try {
+    await qa('init');
+    assert.match((await qa('--help')).stdout, /--case/);
+    const source = JSON.parse(await readFile(join(dir, 'cases/task-flow.json'), 'utf8'));
+    source.cases.forEach((item: {questions:string[]}) => { item.questions = ['Choose a test account']; });
+    await writeFile(join(dir, 'cases/task-flow.json'), JSON.stringify(source));
+    const runs = async () => (await readdir(join(dir, '.flowqa/runs')).catch(() => [])).filter(name => /^[a-f0-9-]{36}$/.test(name));
+    for (const args of [['--case','unknown'], ['--case','TC-001','--case','TC-001'], ['--case','']]) {
+      await assert.rejects(qa('run','cases/task-flow.json',...args), (error: unknown) => {
+        assert.equal((error as {code:number}).code, 2); return true;
+      });
+    }
+    assert.deepEqual(await runs(), [], 'Invalid selection creates no run directory.');
+    await assert.rejects(qa('validate','cases/task-flow.json','--case','TC-001'), (error: unknown) => (error as {code:number}).code === 2);
+    await assert.rejects(qa('run','cases/task-flow.json','--case','TC-003','--case','TC-001','--lang','ko'), (error: unknown) => {
+      const result = error as {code:number;stdout:string};
+      assert.equal(result.code, 1);
+      assert.match(result.stdout, /선택 실행.*3.*2/);
+      return true;
+    });
+    const [runId] = await runs();
+    const report = JSON.parse(await readFile(join(dir, '.flowqa/runs', runId!, 'qa-report.json'), 'utf8'));
+    assert.deepEqual(report.selection, {caseIds:['TC-001','TC-003'],totalCases:3});
+    assert.deepEqual(report.cases.map((item: {id:string}) => item.id), ['TC-001','TC-003']);
+    assert.ok(report.cases.every((item: {status:string}) => item.status === 'blocked'));
+    const snapshot = JSON.parse(await readFile(join(dir, '.flowqa/runs', runId!, 'suite.json'), 'utf8'));
+    assert.equal(snapshot.cases.length, 3);
+    const output = (await qa('compare', `.flowqa/runs/${runId}`, `.flowqa/runs/${runId}`)).stdout;
+    assert.match(output, /omitted cases were not evaluated/);
+  } finally { await rm(dir, {recursive:true,force:true}); }
+});
 test('CLI supports a separate workspace, prompt handoff, validation and safe generation', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-cli-'));
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
@@ -196,7 +230,7 @@ test('CLI report comparison distinguishes mobile device and app identities', asy
       await mkdir(join(dir, name));
       await writeFile(join(dir, name, 'qa-report.json'), JSON.stringify({ ...report, target: currentTarget }));
     }
-    assert.match((await qa('compare', 'before', 'same')).stdout, /Comparing the same suite and target/);
-    for (const changed of ['device', 'app']) assert.match((await qa('compare', 'before', changed)).stdout, /Suite or target differs/);
+    assert.match((await qa('compare', 'before', 'same')).stdout, /Comparing the same suite, target and case selection/);
+    for (const changed of ['device', 'app']) assert.match((await qa('compare', 'before', changed)).stdout, /Suite, target or case selection differs/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

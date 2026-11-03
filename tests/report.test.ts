@@ -187,3 +187,26 @@ test('interruption keeps attempts already present in the current raw report', ()
   assert.equal(report.cases[1]?.status, 'error');
   assert.match(report.errors.join(' '), /User interrupt signal/);
 });
+
+test('partial scope survives normalized, stopped, and failure reports without unselected cases', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const selectedContext: ReportContext = { ...context(root), selection: { caseIds: ['A'], totalCases: 3 }, blockedReasons: new Map() };
+  const selectedRaw = raw([result('A', 'passed', [attempt(0, 'passed')])], 'passed');
+  const normalized = normalizeReport1(selectedRaw, selectedContext);
+  assert.equal(normalized.status, 'passed');
+  assert.deepEqual(normalized.cases.map((item) => item.id), ['A']);
+  assert.deepEqual(normalized.selection, selectedContext.selection);
+  assert.match(renderMarkdown(normalized), /Selected 1 \/ 3 cases; full suite not evaluated/);
+  assert.match(renderMarkdown(normalized, 'ko'), /선택 1 \/ 전체 3개 케이스; 전체 케이스 모음은 평가하지 않았습니다/);
+
+  const stopped = stoppedReport(selectedRaw, selectedContext, 'interrupted', 'Stopped');
+  assert.equal(stopped.status, 'interrupted');
+  assert.deepEqual(stopped.cases.map((item) => item.id), ['A']);
+  assert.deepEqual(stopped.selection, selectedContext.selection);
+
+  const failed = failureReport(selectedContext, 'error', 'No raw report');
+  assert.deepEqual(failed.cases.map((item) => item.id), ['A']);
+  assert.deepEqual(failed.selection, selectedContext.selection);
+  assert.match(renderMarkdown(failed), /full suite not evaluated/);
+  assert.throws(() => normalizeReport1(raw([result('B', 'passed', [attempt(0, 'passed')])], 'passed'), selectedContext), /does not match/);
+});

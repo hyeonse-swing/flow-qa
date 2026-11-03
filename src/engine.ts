@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs';
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { selectCases } from './case-selection.ts';
 import { compileSuite } from './compiler.ts';
 import { acquireMobileDevice, mobileReadiness, type ListMobileDevices } from './mobile-runtime.ts';
 import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type QAReport } from './report.ts';
@@ -16,6 +17,7 @@ export interface RunSuiteOptions {
   suite: Suite;
   config: Config;
   targetName: string;
+  caseIds?: readonly string[];
   signal?: AbortSignal;
   /** @internal A read-only inventory seam for device-free tests. */
   listMobileDevices?: ListMobileDevices;
@@ -165,6 +167,10 @@ function runnableSuite(suite: Suite, blocked: ReadonlyMap<string, string>): Suit
 
 /** Run one immutable suite snapshot through the locally installed e2e CLI. */
 export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult> {
+  // A malformed selection must not leave a run directory behind.
+  const selected = selectCases(options.suite, options.caseIds);
+  let executionSuite = selected.suite;
+  let selection = selected.selection;
   const workspace = await realpath(options.workspace);
   const qaRoot = await ownedDirectory(workspace, '.flowqa');
   const runsRoot = await ownedDirectory(qaRoot, 'runs');
@@ -184,7 +190,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
   let blocked = new Map<string, string>();
   let target: ReportTarget = { name: options.targetName, url: '' };
   let releaseMobileDevice: (() => void) | undefined;
-  const context = () => ({ suite: options.suite, runId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
+  const context = () => ({ suite: executionSuite, selection, runId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
   const blockAll = (suite: Suite, reason: string): never => {
     for (const testCase of suite.cases) if (!blocked.has(testCase.id)) blocked.set(testCase.id, reason);
     throw new BlockedRun(reason);
@@ -192,6 +198,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
   try {
     const suite = suiteSchema.parse(options.suite);
     await verifySuiteSource(suite, workspace);
+    ({ suite: executionSuite, selection } = selectCases(suite, options.caseIds));
     const rawTarget = options.config?.targets?.[options.targetName] as unknown;
     if (rawTarget && typeof rawTarget === 'object' && !Array.isArray(rawTarget)) {
       const raw = rawTarget as Record<string, unknown>;
@@ -199,28 +206,28 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
         if ((raw.platform === 'ios' || raw.platform === 'android') && typeof raw.bundleId === 'string') {
           target = { name: options.targetName, kind: 'mobile', platform: raw.platform, bundleId: raw.bundleId, device: '' };
         }
-        blocked = blockedCases(suite, options.config);
-        blockAll(suite, 'A mobile target requires an explicit device.');
+        blocked = blockedCases(executionSuite, options.config);
+        blockAll(executionSuite, 'A mobile target requires an explicit device.');
       }
     }
     const config = configSchema.parse(options.config);
     const selectedTarget = config.targets[options.targetName];
     if (!selectedTarget) throw new Error(`Target not found: ${options.targetName}`);
     target = reportTarget(options.targetName, selectedTarget);
-    blocked = blockedCases(suite, config);
-    if ((suite.platform ?? 'web') !== targetKind(selectedTarget)) blockAll(suite, 'The suite platform does not match the selected target.');
-    const runnable = suite.cases.filter((testCase) => !blocked.has(testCase.id));
+    blocked = blockedCases(executionSuite, config);
+    if ((suite.platform ?? 'web') !== targetKind(selectedTarget)) blockAll(executionSuite, 'The suite platform does not match the selected target.');
+    const runnable = executionSuite.cases.filter((testCase) => !blocked.has(testCase.id));
     let sdkDevice: string | undefined;
     if (selectedTarget.kind === 'mobile' && runnable.length > 0 && !options.signal?.aborted) {
       const readiness = await mobileReadiness(selectedTarget, options.listMobileDevices);
-      if (!readiness.ready) blockAll(suite, readiness.reason);
+      if (!readiness.ready) blockAll(executionSuite, readiness.reason);
       else {
         sdkDevice = readiness.sdkDevice;
         releaseMobileDevice = acquireMobileDevice(selectedTarget.platform, readiness.deviceId);
       }
-      if (!releaseMobileDevice) blockAll(suite, 'Selected mobile device is in use.');
+      if (!releaseMobileDevice) blockAll(executionSuite, 'Selected mobile device is in use.');
     }
-    const executable = runnableSuite(suite, blocked);
+    const executable = runnableSuite(executionSuite, blocked);
     const testFile = path.join(runDir, TEST_FILE);
     const configFile = path.join(runDir, CONFIG_FILE);
     const agentAvailable = runnable.some(agentCase);

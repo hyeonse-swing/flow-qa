@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -61,6 +61,37 @@
   function targetLabel(target) { return target?.kind === 'mobile' ? `${target.platform === 'ios' ? 'iOS' : 'Android'} · ${target.bundleId} · ${target.device}` : target?.url || ''; }
   function targetDisplay(target) { return `${target?.name || t('app.noTarget')} · ${targetLabel(target)}`; }
   function compatibleTarget() { const target = selectedTarget(); return target && targetPlatform(target) === suitePlatform(); }
+  function selectedCases() { return (app.draft?.cases || []).filter((item) => app.selectedCaseIds.has(item.id)); }
+  function selectionScope(selection) {
+    return selection && Array.isArray(selection.caseIds) && Number.isInteger(selection.totalCases) && selection.caseIds.length < selection.totalCases
+      ? t('app.selectedScope', { selected: selection.caseIds.length, total: selection.totalCases }) : '';
+  }
+  function renderCaseSelection() {
+    const host = $('case-selection-list'); replace(host);
+    for (const item of app.draft?.cases || []) {
+      const label = el('label', 'case-selection-item');
+      const input = el('input'); input.type = 'checkbox'; input.dataset.caseId = item.id; input.checked = app.selectedCaseIds.has(item.id);
+      label.append(input, el('span', '', `${item.id} · ${item.title}`)); host.append(label);
+    }
+    updateCaseSelection();
+  }
+  function updateCaseSelection() {
+    const total = app.draft?.cases?.length || 0;
+    $('case-selection-summary').textContent = t('scenario.selectionSummary', { selected: selectedCases().length, total });
+    const disabled = !app.draft || app.busy || !!app.state?.active;
+    for (const input of $('case-selection-list').querySelectorAll('input[data-case-id]')) {
+      input.checked = app.selectedCaseIds.has(input.dataset.caseId);
+      input.disabled = disabled;
+    }
+    $('select-all-cases').disabled = disabled || selectedCases().length === total;
+    $('clear-case-selection').disabled = disabled || !app.selectedCaseIds.size;
+  }
+  function changeCaseSelection(ids) {
+    if (!app.draft || app.busy || app.state?.active) return;
+    const next = new Set(ids);
+    if (next.size === app.selectedCaseIds.size && [...next].every((id) => app.selectedCaseIds.has(id))) return;
+    app.selectedCaseIds = next; $('review-checkbox').checked = false; readiness();
+  }
   function canDownloadSavedCases() {
     return Boolean(app.draft && app.script && app.savedFile && app.savedHash && !app.dirty && !app.stale && !app.busy && !hasUnsavedScenario());
   }
@@ -68,7 +99,8 @@
   function readiness() {
     const active = app.state?.active;
     const ready = !!app.draft && !!app.script && !app.stale && !app.dirty;
-    $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !$('review-checkbox').checked || !compatibleTarget() || !!active || app.busy;
+    $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !selectedCases().length || !$('review-checkbox').checked || !compatibleTarget() || !!active || app.busy;
+    updateCaseSelection();
     $('save-btn').disabled = !ready || app.busy;
     $('suite-download').disabled = !canDownloadSavedCases();
     $('flow-download').disabled = !canDownloadSourceMarkdown();
@@ -95,12 +127,13 @@
       : app.dirty ? 'app.dirty'
       : !ready ? 'app.needValidated'
       : !app.savedFile || !app.savedHash ? 'app.needSaved'
+      : !selectedCases().length ? 'app.needCaseSelection'
       : !$('target-select').value ? 'app.needTarget'
       : !compatibleTarget() ? 'app.platformMismatch'
       : !$('review-checkbox').checked ? 'app.needReview' : 'app.ready');
-    const cases = app.draft?.cases || [];
+    const cases = selectedCases();
     const blocked = cases.filter((item) => item.questions?.length || (item.steps.some((step) => ['act', 'assertAgent'].includes(step.type)) && !app.state?.models?.agent?.keyReady)).length;
-    $('case-readiness').textContent = ready ? t('app.caseReadiness', { total: cases.length, ready: cases.length - blocked, blocked, hint: blocked ? t('app.blockedHint') : '' }) : '';
+    $('case-readiness').textContent = ready ? t(cases.length < (app.draft?.cases.length || 0) ? 'app.selectedCaseReadiness' : 'app.caseReadiness', { total: cases.length, ready: cases.length - blocked, blocked, hint: blocked ? t('app.blockedHint') : '' }) : '';
     const pill = $('draft-status');
     pill.textContent = t(app.stale ? 'app.regenerate' : app.dirty ? 'app.revalidate' : ready ? 'app.validated' : 'scenario.noDraft');
     pill.className = 'status-pill' + (ready ? ' ready' : app.stale || app.dirty ? ' dirty' : '');
@@ -169,7 +202,8 @@
     $('suite-editor').value = JSON.stringify(suite, null, 2);
     $('scenario-platform').value = suite.platform || 'web';
     $('review-checkbox').checked = false;
-    summarize(suite); readiness();
+    app.selectedCaseIds = new Set((suite.cases || []).map((item) => item.id));
+    summarize(suite); renderCaseSelection(); readiness();
   }
   function targetOptions() {
     const selected = $('target-select').value;
@@ -236,12 +270,13 @@
     if (!matchingRuns.length) { host.append(el('p', 'empty', t(query ? 'app.historyNoSearchMatches' : 'app.historyNoStatusMatches'))); return; }
     for (const run of matchingRuns) {
       const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
+      const scope = selectionScope(run.selection); if (scope) copy.append(el('small', 'selection-scope', scope));
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
     }
   }
   const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'];
   const comparisonCategoryKeys = { 'newly-failed': 'comparison.newlyFailed', 'now-passed': 'comparison.nowPassed', changed: 'comparison.changed', unchanged: 'comparison.unchanged', added: 'comparison.added', missing: 'comparison.missing' };
-  const comparisonWarningKeys = { 'suite-changed': 'comparison.warningSuite', 'reverse-order': 'comparison.warningReverse', 'incomplete-run': 'comparison.warningIncomplete', 'mobile-identity-unverified': 'comparison.warningMobileIdentity' };
+  const comparisonWarningKeys = { 'suite-changed': 'comparison.warningSuite', 'reverse-order': 'comparison.warningReverse', 'incomplete-run': 'comparison.warningIncomplete', 'mobile-identity-unverified': 'comparison.warningMobileIdentity', 'partial-run': 'comparison.warningPartial', 'selection-changed': 'comparison.warningSelectionChanged' };
   function comparisonPair() { return { baseline: $('compare-baseline').value, current: $('compare-current').value }; }
   function comparisonValid() { const { baseline, current } = comparisonPair(); return !!baseline && !!current && baseline !== current; }
   function comparisonStatus(key, params = {}, error = false) {
@@ -268,7 +303,7 @@
       const select = $(id); const selected = select.value;
       select.replaceChildren(el('option', '', t('comparison.choose'))); select.firstChild.value = '';
       for (const run of runs) {
-        const option = el('option', '', t('comparison.runLabel', { id: run.runId, shortId: run.runId.slice(-8), date: formatDate(run.startedAt), suite: run.suiteId, target: targetDisplay(run.target), status: i18n.status(run.status) }));
+        const option = el('option', '', `${t('comparison.runLabel', { id: run.runId, shortId: run.runId.slice(-8), date: formatDate(run.startedAt), suite: run.suiteId, target: targetDisplay(run.target), status: i18n.status(run.status) })}${selectionScope(run.selection) ? ` · ${selectionScope(run.selection)}` : ''}`);
         option.value = run.runId; select.append(option);
       }
       select.value = runs.some((run) => run.runId === selected) ? selected : '';
@@ -297,7 +332,7 @@
     const warnings = $('comparison-warnings'); replace(warnings);
     for (const code of result.warnings || []) warnings.append(el('p', 'comparison-warning', t(comparisonWarningKeys[code] || 'comparison.warningUnknown', { code })));
     const summary = $('comparison-summary'); replace(summary);
-    const meta = el('p', 'comparison-meta', `${result.baseline.runId} · ${formatDate(result.baseline.startedAt)} → ${result.current.runId} · ${formatDate(result.current.startedAt)}`); summary.append(meta);
+    const meta = el('p', 'comparison-meta', `${result.baseline.runId} · ${formatDate(result.baseline.startedAt)}${selectionScope(result.baseline.selection) ? ` · ${selectionScope(result.baseline.selection)}` : ''} → ${result.current.runId} · ${formatDate(result.current.startedAt)}${selectionScope(result.current.selection) ? ` · ${selectionScope(result.current.selection)}` : ''}`); summary.append(meta);
     const counts = el('div', 'comparison-counts');
     for (const category of comparisonCategories) {
       const item = el('div', 'comparison-count');
@@ -423,7 +458,7 @@
     noticeKey('app.compileComplete');
   }); }
   async function save() { await work(async () => { if (!app.draft || app.dirty || app.stale) throw localizedError('app.needValidated'); const body = { suite: app.draft }; if (!app.boundSource && app.sourceFlow && (app.origin === 'imported' ? editableFlow(app.sourceFlow) === $('flow-input').value : app.sourceFlow === $('flow-input').value.trim())) body.flow = app.sourceFlow; const result = await api('/api/save', body); const saved = await api(`/api/suite?file=${encodeURIComponent(result.file)}`); $('flow-input').value = saved.flow || ''; setDraft(saved.suite, saved.script, 'library', saved.flow || '', result.file, saved.suiteHash || ''); noticeKey('app.savedSuite', { file: result.file }); await refresh(false); }); }
-  async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !$('review-checkbox').checked || !compatibleTarget()) throw localizedError('app.runNotReady'); const target = selectedTarget(); const result = await api('/api/run', { suite: app.savedFile, suiteHash: app.savedHash, targetName: target.name, targetFingerprint: target.targetFingerprint }); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
+  async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !selectedCases().length || !$('review-checkbox').checked || !compatibleTarget()) throw localizedError('app.runNotReady'); const target = selectedTarget(); const body = { suite: app.savedFile, suiteHash: app.savedHash, targetName: target.name, targetFingerprint: target.targetFingerprint }; if (selectedCases().length < app.draft.cases.length) body.caseIds = selectedCases().map((item) => item.id); const result = await api('/api/run', body); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
   async function stop() {
     if (app.stopping || !app.state?.active) return;
     if (app.state.active.kind === 'plan' && app.planning) app.planRequest += 1;
@@ -447,7 +482,7 @@
     const report = app.report; if (!report) return;
     $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${targetDisplay(report.target)}`;
     const host = $('report-content'); replace(host);
-    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); host.append(meta);
+    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); const scope = selectionScope(report.selection); if (scope) meta.append(el('span', 'selection-scope', scope)); host.append(meta);
     if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
     if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
     for (const item of report.cases || []) {
@@ -497,7 +532,7 @@
       const input = form?.elements.namedItem(focus.name);
       if (input) { input.focus(); if (Number.isInteger(focus.start)) input.setSelectionRange(focus.start, focus.end); }
     }
-    summarize(app.draft, true);
+    summarize(app.draft, true); renderCaseSelection();
     renderActive(); targetDescription(); renderLibrary(); renderHistory(); renderComparisonOptions(); renderComparison(); renderReport();
     if (app.comparisonStatus) comparisonStatus(app.comparisonStatus, app.comparisonStatusParams || {}, app.comparisonStatus === 'comparison.error');
     app.reportMarkdown = '';
@@ -525,10 +560,10 @@
       const json = $('suite-editor').value;
       const unsavedJson = json.trim() && (!app.savedFile || json !== JSON.stringify(app.draft, null, 2));
       if (unsavedJson && !confirmScenarioReplacement('app.confirmNewDraft')) return;
-      app.draft = null; app.script = ''; app.savedFile = ''; app.savedHash = '';
+      app.draft = null; app.selectedCaseIds = new Set(); app.script = ''; app.savedFile = ''; app.savedHash = '';
       app.origin = 'none'; app.sourceFlow = ''; app.boundSource = null; app.stale = false; app.dirty = false;
       $('suite-editor').value = ''; $('review-checkbox').checked = false;
-      summarize(null); readiness();
+      summarize(null); renderCaseSelection(); readiness();
       noticeKey('app.newDraftNotice');
       $('suite-editor').focus();
     });
@@ -536,6 +571,9 @@
     $('scenario-platform').addEventListener('change', () => { app.planRequest += 1; if (app.draft) { app.stale = true; app.savedHash = ''; } $('review-checkbox').checked = false; readiness(); });
     $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
     $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; targetDescription(); });
+    $('case-selection-list').addEventListener('change', (event) => { const input = event.target.closest('input[data-case-id]'); if (!input) return; const next = new Set(app.selectedCaseIds); if (input.checked) next.add(input.dataset.caseId); else next.delete(input.dataset.caseId); changeCaseSelection(next); });
+    $('select-all-cases').addEventListener('click', () => changeCaseSelection((app.draft?.cases || []).map((item) => item.id)));
+    $('clear-case-selection').addEventListener('click', () => changeCaseSelection([]));
     $('plan-btn').addEventListener('click', generate); $('prompt-btn').addEventListener('click', prompt); $('compile-btn').addEventListener('click', compile); $('save-btn').addEventListener('click', save); $('run-btn').addEventListener('click', run); $('stop-btn').addEventListener('click', stop);
     $('import-btn').addEventListener('click', importFiles);
     $('global-stop-btn').addEventListener('click', stop);

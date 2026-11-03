@@ -72,6 +72,8 @@ const koreanMessages: Record<string, string> = {
   'Both reports must use the same target.': '두 리포트의 실행 대상이 같아야 합니다.',
   'Both reports need a non-empty suite hash.': '두 리포트에 비어 있지 않은 케이스 모음 해시가 있어야 합니다.',
   'Both reports need unique, non-empty case IDs.': '두 리포트의 케이스 ID는 비어 있지 않고 중복되지 않아야 합니다.',
+  'The report selection does not match its recorded cases.': '보고서의 선택 범위가 기록된 케이스와 일치하지 않습니다.',
+  'Select one or more unique cases from this suite.': '이 케이스 모음에서 중복 없이 하나 이상의 케이스를 선택하세요.',
   'Invalid evidence selection.': '증거 파일 선택이 올바르지 않습니다.',
   'The request is not allowed.': '허용되지 않은 요청입니다.',
   'Invalid request token.': '요청 토큰이 올바르지 않습니다.',

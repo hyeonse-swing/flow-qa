@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 import { runSuite } from '../src/engine.ts';
+import { CaseSelectionError } from '../src/case-selection.ts';
 import type { Config, Suite } from '../src/schema.ts';
 
 const config: Config = {
@@ -143,4 +145,82 @@ test('native config binds mobile engine and agent tools to the ready physical de
     : original(name, languageVersion, onError, shouldCreateNewSourceFile);
   const program = ts.createProgram([fileName], compilerOptions, host);
   assert.deepEqual(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
+});
+
+function selectiveSuite(): Suite {
+  return { ...suite('selected'), requirements: [{ id: 'R1', text: 'Runnable' }, { id: 'R2', text: 'Unresolved' }, { id: 'R3', text: 'Agent' }],
+    cases: [
+      { id: 'C1', title: 'selected', requirementIds: ['R1'], preconditions: [], questions: [], steps: [{ type: 'assertUrl', expected: '/selected-only' }] },
+      { id: 'C2', title: 'unselected question', requirementIds: ['R2'], preconditions: [], questions: ['Who?'], steps: [{ type: 'open', path: '/excluded-question' }] },
+      { id: 'C3', title: 'unselected agent', requirementIds: ['R3'], preconditions: [], questions: [], steps: [{ type: 'assertAgent', instruction: 'excluded-agent-sentinel' }] },
+    ] };
+}
+
+test('invalid selected IDs fail before creating any run directory', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  for (const caseIds of [[], ['C1', 'C1'], ['missing']]) {
+    await assert.rejects(runSuite({ workspace, suite: selectiveSuite(), config, targetName: 'local', caseIds }), CaseSelectionError);
+  }
+  assert.equal(existsSync(path.join(workspace, '.flowqa')), false);
+});
+
+test('an invalid complete suite still creates an error report for an ordinary full run', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const invalid = { ...selectiveSuite(), cases: [] } as unknown as Suite;
+  const result = await runSuite({ workspace, suite: invalid, config, targetName: 'local' });
+  assert.equal(result.report.status, 'error');
+  assert.equal(result.report.selection, undefined);
+  assert.ok(existsSync(path.join(result.runDir, 'qa-report.json')));
+});
+
+test('selected blocked case emits only its own result without launching e2e and retains full source snapshot', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const original = selectiveSuite();
+  const snapshot = `${JSON.stringify(original, null, 2)}\n`;
+  const result = await runSuite({ workspace, suite: original, config, targetName: 'local', caseIds: ['C2'] });
+  assert.equal(result.report.status, 'blocked');
+  assert.deepEqual(result.report.selection, { caseIds: ['C2'], totalCases: 3 });
+  assert.deepEqual(result.report.cases.map((item) => [item.id, item.status]), [['C2', 'blocked']]);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
+  assert.equal(readFileSync(path.join(result.runDir, 'suite.json'), 'utf8'), snapshot);
+  assert.equal(readFileSync(path.join(result.runDir, 'suite.sha256'), 'utf8'), `${createHash('sha256').update(snapshot).digest('hex')}\n`);
+  const generated = readFileSync(path.join(result.runDir, 'suite.e2e.ts'), 'utf8');
+  assert.match(generated, /test\.skip\("\[C2\] unselected question"/);
+  assert.doesNotMatch(generated, /\[C1\]|\[C3\]|selected-only|excluded-agent-sentinel/);
+  assert.match(readFileSync(path.join(result.runDir, 'qa-report.md'), 'utf8'), /Selected 1 \/ 3 cases; full suite not evaluated/);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(result.runDir, 'qa-report.json'), 'utf8')).selection, result.report.selection);
+  assert.equal(JSON.stringify(original), JSON.stringify(selectiveSuite()));
+
+  const agentBlocked = await runSuite({ workspace, suite: original, config, targetName: 'local', caseIds: ['C3'] });
+  assert.equal(agentBlocked.report.status, 'blocked');
+  assert.deepEqual(agentBlocked.report.cases.map((item) => [item.id, item.status]), [['C3', 'blocked']]);
+  assert.match(agentBlocked.report.cases[0]?.reason ?? '', /agent model/);
+  assert.equal(existsSync(path.join(agentBlocked.runDir, 'e2e.stdout.log')), false);
+});
+
+test('pre-aborted selected run compiles only selected steps and reports only selected error', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const abort = new AbortController();
+  abort.abort();
+  const result = await runSuite({ workspace, suite: selectiveSuite(), config, targetName: 'local', caseIds: ['C1'], signal: abort.signal });
+  assert.equal(result.report.status, 'interrupted');
+  assert.deepEqual(result.report.cases.map((item) => [item.id, item.status]), [['C1', 'error']]);
+  assert.deepEqual(result.report.selection, { caseIds: ['C1'], totalCases: 3 });
+  const generated = readFileSync(path.join(result.runDir, 'suite.e2e.ts'), 'utf8');
+  assert.match(generated, /selected-only/);
+  assert.doesNotMatch(generated, /\[C2\]|\[C3\]|excluded-question|excluded-agent-sentinel/);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
+});
+
+test('source verification still checks the original full suite before a selected run', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  writeFileSync(path.join(workspace, 'flow.md'), 'changed');
+  const stale: Suite = { ...selectiveSuite(), source: { file: 'flow.md', sha256: '0'.repeat(64) } };
+  const result = await runSuite({ workspace, suite: stale, config, targetName: 'local', caseIds: ['C1'] });
+  assert.equal(result.report.status, 'error');
+  assert.deepEqual(result.report.cases.map((item) => item.id), ['C1']);
+  assert.deepEqual(result.report.selection, { caseIds: ['C1'], totalCases: 3 });
+  assert.match(result.report.errors.join(' '), /STALE_SUITE/);
+  assert.equal(existsSync(path.join(result.runDir, 'suite.e2e.ts')), false);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
 });

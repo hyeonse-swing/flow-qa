@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.3.0
+npm install -g @ihyeon/flow-qa@0.4.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -45,6 +45,16 @@ To enter fresh JSON after changing a scenario, open the JSON editor in case revi
 From version `0.2.2`, the UI requests the browser's leave-page confirmation when refreshing or closing a tab with an unsaved scenario or case draft. Unchanged saved cases do not trigger it; saving clears the warning. Choose to stay on the page to keep editing. The browser controls the prompt wording and availability. This is not automatic saving.
 
 From version `0.2.4`, loading a suite from the library or importing valid case files also asks before replacing unsaved scenario or case content. **New JSON draft** asks before clearing unsaved JSON and keeps the scenario text. Cancel keeps the current content and selected import files. Unchanged saved cases and ordinary navigation between screens do not prompt; invalid imports still show their validation error without replacing anything.
+
+### Run selected cases
+
+From version `0.4.0`, **Scenario → Review, then run → Cases to run** lists the validated suite's cases. Initially all are selected. Use individual checkboxes, **Select all**, or **Clear selection** to choose a nonempty set. A changed selection clears the review confirmation; choose the target, inspect the selected cases, and confirm review again before execution. Selection controls are disabled during a run or another busy operation. Navigation, language changes, and polling keep the selection. Loading/importing/validating a new draft resets it to all cases. It is not saved across page reloads.
+
+The selected cases alone determine runnable/blocked counts and the run result. A selected case with unresolved questions or an unavailable required model stays blocked. Unselected cases do not execute and are not reported as passed or skipped. Flow QA does not infer prerequisites: each selected case must establish its own starting state. The source flow and full saved suite still pass existing validation and review-hash checks. Selection does not edit the saved file; the script preview and script/case downloads continue to include the full suite.
+
+The run directory keeps the complete original `suite.json` and its hash. A partial `qa-report.json` retains `flow-qa/report-1` and adds `selection: { caseIds, totalCases }`; its `cases` list contains exactly the selected IDs in original suite order. A full run, including explicitly selecting every case, omits this field as before. History, detailed reports, and Markdown exports show selected/total counts and explain that omitted cases were not assessed. Comparison exports retain each run's scope, warn on partial runs and differing selections, and describe absent cases as missing results rather than recovered defects. Invalid selection metadata is not accepted as a valid report.
+
+For the CLI, repeat `--case`: `flow-qa run cases/task-flow.json --target demo --case TC-001 --case TC-003`. Unknown, duplicate, or empty IDs are rejected before execution. The command keeps existing exit semantics: a partial pass is exit 0, a failure/block is exit 1, interrupted is 130, and invalid input is 2. If CI requires complete-suite coverage, omit `--case` and check that report selection metadata is absent.
 
 ### Expand or collapse case review
 

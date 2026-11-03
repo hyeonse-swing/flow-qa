@@ -147,3 +147,34 @@ test('Markdown redacts web targets, credentialed URLs, and links while JSON reta
   assert.doesNotMatch(korean, /user:secret|token=123|example\.test|file:\/\/\/private/);
   assert.match(JSON.stringify(comparison), /user:secret@example\.test/);
 });
+
+test('same-hash partial comparisons warn about scope and only compare recorded cases', () => {
+  const baseline = report('baseline');
+  baseline.selection = { caseIds: ['TC-1'], totalCases: 2 };
+  const current = report('current');
+  current.cases.push({ id: 'TC-2', title: 'Newly selected', status: 'passed', expected: [], attempts: [] });
+  const comparison = compareReports(baseline, current);
+  assert.deepEqual(comparison.warnings, ['partial-run', 'selection-changed']);
+  assert.deepEqual(comparison.baseline.selection, baseline.selection);
+  assert.equal(comparison.current.selection, undefined);
+  assert.deepEqual(comparison.cases.map((item) => [item.id, item.category]), [['TC-1', 'unchanged'], ['TC-2', 'added']]);
+  assert.equal(comparison.cases[1]?.baseline, null);
+  assert.equal(comparison.counts.added, 1);
+  assert.equal(comparison.counts.missing, 0);
+  assert.match(renderComparisonMarkdown(comparison), /Selected 1 \/ 2 cases; full suite not evaluated/);
+  assert.match(renderComparisonMarkdown(comparison, 'ko'), /전체 케이스 모음은 평가하지 않았습니다/);
+  comparison.baseline.selection!.caseIds.push('mutated');
+  assert.deepEqual(baseline.selection.caseIds, ['TC-1']);
+});
+
+test('partial runs with identical selected case sets do not warn about changed selection', () => {
+  const baseline = report('baseline');
+  baseline.cases.push({ id: 'TC-2', title: 'Second', status: 'passed', expected: [], attempts: [] });
+  baseline.selection = { caseIds: ['TC-1', 'TC-2'], totalCases: 3 };
+  const current = report('current');
+  current.cases.unshift({ id: 'TC-2', title: 'Second', status: 'passed', expected: [], attempts: [] });
+  current.selection = { caseIds: ['TC-2', 'TC-1'], totalCases: 3 };
+  assert.deepEqual(compareReports(baseline, current).warnings, ['partial-run']);
+  current.selection.caseIds = ['TC-1', 'other'];
+  rejection(() => compareReports(baseline, current), 409, /selection/);
+});

@@ -126,6 +126,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .target-field { min-width: 0; }
 .target-field select { min-height: 45px; }
 .execution-confirm { display: flex; flex-direction: column; min-width: 0; }
+.case-selection { min-width: 0; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.case-selection-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.case-selection-head h3 { margin: 0; font-size: 14px; }
+#case-selection-summary { color: var(--muted); font-size: 12px; }
+.case-selection .actions { margin: 12px 0; }
+#case-selection-list { display: grid; gap: 0; max-height: 250px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-control); }
+.case-selection-item { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 13px; }
+.case-selection-item:last-child { border-bottom: 0; }
+.case-selection-item input { width: 18px; height: 18px; flex: none; margin: 1px 0 0; accent-color: var(--accent-solid); }
+.case-selection-item span { min-width: 0; overflow-wrap: anywhere; }
+.selection-scope { color: var(--accent-text) !important; font-weight: 700; }
 .review-line { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; cursor: pointer; }
 .review-line input { width: 18px; height: 18px; flex: none; margin: 2px 0 0; accent-color: var(--accent-solid); }
 .run-bar { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: auto; padding-top: 18px; }

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { chromium } from 'playwright';
 import { compileSuite } from '../compiler.ts';
+import { CaseSelectionError, isReportSelectionValid, selectCases } from '../case-selection.ts';
 import { runSuite, type RunSuiteOptions, type RunSuiteResult } from '../engine.ts';
 import { localeFromAcceptLanguage, localizeProductMessage, type Locale } from '../i18n.ts';
 import { EvidenceError, readEvidence } from './evidence.ts';
@@ -39,7 +40,8 @@ const reportEnvelope = z.object({
   cases: z.array(z.object({ id: z.string(), title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
     expected: z.array(z.string()), attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
   errors: z.array(z.string()), usage: z.object({ modelTokens: z.number(), modelCachedTokens: z.number().optional(), estimatedCostUsd: z.number().optional() }).optional(),
-}).passthrough();
+  selection: z.unknown().optional(),
+}).passthrough().refine((report) => isReportSelectionValid(report.cases, report.selection));
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: path.join(PUBLIC_DIR, 'index.html'), type: 'text/html; charset=utf-8' },
@@ -72,7 +74,7 @@ const SCHEMA_FIELDS = new Set([
   'requirementIds', 'preconditions', 'questions', 'steps', 'type', 'path', 'instruction',
   'locator', 'by', 'value', 'name', 'visible', 'expected', 'match', 'flow', 'role', 'url',
   'description', 'baseURL', 'model', 'apiKeyEnv', 'clear', 'targetName', 'targetURL', 'targetFingerprint', 'suiteHash',
-  'kind', 'platform', 'bundleId', 'device', 'direction',
+  'kind', 'platform', 'bundleId', 'device', 'direction', 'caseIds',
 ]);
 const KNOWN_SCHEMA_MESSAGES = new Map([
   ['IDs must be unique.', 'IDs must be unique.'],
@@ -341,7 +343,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     candidates.sort((a, b) => b.mtime - a.mtime);
     const history: { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
-      caseCount: number; passedCount: number; target: QAReport['target'] }[] = [];
+      caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] }[] = [];
     for (const candidate of candidates) {
       if (history.length === 50) break;
       try {
@@ -349,7 +351,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         history.push({ runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
           finishedAt: item.finishedAt, caseCount: item.cases.length,
           passedCount: item.cases.filter((entry) => entry.status === 'passed' || entry.status === 'flaky').length,
-          target: item.target });
+          target: item.target, ...(item.selection ? { selection: item.selection } : {}) });
       } catch { /* incomplete or unsafe run */ }
     }
     return history;
@@ -596,13 +598,20 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (url.pathname === '/api/run') {
       enterMutation();
       try {
-        const { suite: file, suiteHash, targetName, targetURL, targetFingerprint: reviewedFingerprint } = parse(z.object({
+        const { suite: file, suiteHash, targetName, targetURL, targetFingerprint: reviewedFingerprint, caseIds } = parse(z.object({
           suite: z.string(), suiteHash: z.string().regex(/^[a-f0-9]{64}$/), targetName: idSchema,
           targetURL: z.string().optional(), targetFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+          caseIds: z.array(idSchema).min(1).max(100).optional(),
         }).strict(), body);
         const selected = await getSuite(file, true);
         if (selected.suiteHash !== suiteHash) throw new HTTPError(409, 'The reviewed case file changed. Open it again to review.');
         const { suite } = selected;
+        let selectedIds: string[] | undefined;
+        try { selectedIds = selectCases(suite, caseIds).selection?.caseIds; }
+        catch (error) {
+          if (error instanceof CaseSelectionError) invalid('Select one or more unique cases from this suite.');
+          throw error;
+        }
         const settings = await config();
         const target = settings.targets[targetName];
         if (!target) invalid('The selected target was not found.');
@@ -622,7 +631,8 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         lastError = undefined;
         const suiteSnapshot = structuredClone(suite);
         const configSnapshot = structuredClone(settings);
-        runTask = Promise.resolve().then(() => run({ workspace, suite: suiteSnapshot, config: configSnapshot, targetName, signal: abort.signal }))
+        runTask = Promise.resolve().then(() => run({ workspace, suite: suiteSnapshot, config: configSnapshot, targetName, signal: abort.signal,
+          ...(selectedIds ? { caseIds: [...selectedIds] } : {}) }))
           .then(() => undefined)
           .catch(() => { lastError = 'Could not complete the run. Check the local records.'; })
           .finally(() => { active = null; controller = undefined; busy = false; runTask = undefined; });
