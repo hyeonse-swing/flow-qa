@@ -68,6 +68,8 @@ From `0.4.0`, choose cases under **Scenario → Review, then run → Cases to ru
 
 The CLI supports repeated IDs: `flow-qa run cases/task-flow.json --target demo --case TC-001 --case TC-003`. Omit `--case` to run the complete suite. Reports and comparisons label partial runs explicitly; a selected-run pass does not evaluate omitted cases. See the [UI guide](docs/ui.md#run-selected-cases).
 
+From `0.5.0`, open a detailed report and choose **Prepare failed/error cases** to load its unchanged saved suite with only `failed` and `error` cases selected. Preparation never starts a run: review the cases and target, then run explicitly. Changed or missing case/source files block preparation; a changed or missing target must be selected again. See [preparing failed cases](docs/ui.md#prepare-failed-cases).
+
 ## Compare recorded runs
 
 In **Run history → Compare two runs**, select two reports from the same suite and target to see passed-to-failed, failed-to-passed, other status changes, unchanged, added, and missing cases. Filter the comparison or download all results as Markdown/JSON. Changed test definitions and incomplete runs carry explicit warnings; observed status changes do not prove a product defect was introduced or fixed. See the [UI guide](docs/ui.md#compare-two-runs).

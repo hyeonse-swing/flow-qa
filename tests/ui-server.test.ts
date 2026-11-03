@@ -10,7 +10,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { PlannerError } from '../src/planner.ts';
-import { failureReport, renderMarkdown } from '../src/report.ts';
+import { failureReport, renderMarkdown, type QAReport } from '../src/report.ts';
 import { selectCases } from '../src/case-selection.ts';
 import { targetFingerprint } from '../src/targets.ts';
 import type { Config, Suite } from '../src/schema.ts';
@@ -609,6 +609,156 @@ test('selected run API validates IDs and review gates, preserves full snapshots,
     assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds: [...ids].reverse() })).status, 202);
     assert.equal(captured()?.caseIds, undefined, 'Selecting every case normalizes to a legacy full run.');
   } finally { release(); await app.close(); }
+});
+
+test('rerun preparation selects only failed and errored report cases in suite order without starting or writing a run', async () => {
+  let runCalls = 0;
+  const app = await fixture({ workspace: '', run: async () => { runCalls++; throw new Error('Unexpected run'); } });
+  try {
+    const suiteFile = path.join(app.workspace, 'cases/task-flow.json');
+    const suite = await readSuite(suiteFile);
+    const ids = suite.cases.map((item) => item.id);
+    const runId = randomUUID();
+    const runDir = path.join(app.workspace, '.flowqa/runs', runId);
+    await mkdir(runDir, { recursive: true });
+    const report = failureReport({ suite, runId, suiteHash: sha256(`${JSON.stringify(suite, null, 2)}\n`),
+      target: { name: 'demo', url: 'http://127.0.0.1:4178' }, startedAt: '2026-11-03T00:00:00Z',
+      finishedAt: '2026-11-03T00:00:01Z', blockedReasons: new Map() }, 'failed', 'Test failed');
+    report.cases[0]!.status = 'failed';
+    report.cases[1]!.status = 'blocked';
+    report.cases[2]!.status = 'error';
+    const reportFile = path.join(runDir, 'qa-report.json');
+    await writeFile(reportFile, JSON.stringify({ ...report, cases: [...report.cases].reverse() }));
+    const before = await Promise.all([readFile(suiteFile), readFile(path.join(app.workspace, 'flows/task-flow.md')),
+      readFile(path.join(app.workspace, 'flowqa.config.json')), readFile(reportFile), readdir(path.join(app.workspace, '.flowqa/runs'))]);
+    const route = `/api/rerun?runId=${runId}`;
+    const response = await fetch(`${app.server.url}${route}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const prepared = await response.json() as { originRunId: string; file: string; suite: Suite; suiteHash: string;
+      script: string; flow: string; caseIds: string[]; targetName: string; targetFingerprint: string; targetMatches: boolean };
+    assert.deepEqual(Object.keys(prepared).sort(), ['originRunId', 'file', 'suite', 'suiteHash', 'script', 'flow',
+      'caseIds', 'targetName', 'targetFingerprint', 'targetMatches'].sort());
+    assert.equal(prepared.originRunId, runId);
+    assert.equal(prepared.file, 'task-flow.json');
+    assert.deepEqual(prepared.suite, suite);
+    assert.equal(prepared.suiteHash, sha256(JSON.stringify(suite)));
+    assert.match(prepared.script, /test\(/);
+    assert.match(prepared.flow, /Create and filter tasks/);
+    assert.deepEqual(prepared.caseIds, [ids[0], ids[2]]);
+    assert.equal(prepared.targetName, 'demo');
+    assert.equal(prepared.targetFingerprint, targetFingerprint(report.target));
+    assert.equal(prepared.targetMatches, true);
+    assert.equal((await state(app.server)).active, null);
+    assert.equal(runCalls, 0);
+    const after = await Promise.all([readFile(suiteFile), readFile(path.join(app.workspace, 'flows/task-flow.md')),
+      readFile(path.join(app.workspace, 'flowqa.config.json')), readFile(reportFile), readdir(path.join(app.workspace, '.flowqa/runs'))]);
+    assert.deepEqual(after, before);
+
+    const config = await readConfig(app.workspace);
+    await writeFile(path.join(app.workspace, 'flowqa.config.json'), JSON.stringify({ ...config, targets: {
+      ...config.targets, demo: { ...config.targets.demo, url: 'https://changed.example' },
+    } }));
+    const changedTarget = await (await fetch(`${app.server.url}${route}`)).json() as typeof prepared;
+    assert.equal(changedTarget.targetMatches, false);
+    assert.equal(changedTarget.targetName, prepared.targetName);
+    assert.equal(changedTarget.targetFingerprint, prepared.targetFingerprint);
+    await writeFile(path.join(app.workspace, 'flowqa.config.json'), JSON.stringify({ ...config, targets: {} }));
+    assert.equal((await (await fetch(`${app.server.url}${route}`)).json() as typeof prepared).targetMatches, false);
+    await writeFile(path.join(app.workspace, 'flowqa.config.json'), JSON.stringify(config));
+
+    report.cases[0]!.status = 'flaky';
+    report.cases[1]!.status = 'skipped';
+    report.cases[2]!.status = 'failed';
+    await writeFile(reportFile, JSON.stringify(report));
+    assert.deepEqual((await (await fetch(`${app.server.url}${route}`)).json() as typeof prepared).caseIds, [ids[2]]);
+    report.cases[2]!.status = 'blocked';
+    await writeFile(reportFile, JSON.stringify(report));
+    const empty = await fetch(`${app.server.url}${route}`);
+    assert.equal(empty.status, 409);
+    assert.equal((await empty.json() as { error: string }).error, 'No failed or errored cases are available to rerun.');
+    assert.equal(runCalls, 0);
+  } finally { await app.close(); }
+});
+
+test('rerun preparation rejects stale or ambiguous saved cases, invalid source, and incoherent report scope', async () => {
+  const app = await fixture();
+  try {
+    const suiteFile = path.join(app.workspace, 'cases/task-flow.json');
+    const sourceFile = path.join(app.workspace, 'flows/task-flow.md');
+    const suiteBytes = await readFile(suiteFile, 'utf8');
+    const sourceBytes = await readFile(sourceFile, 'utf8');
+    const suite = await readSuite(suiteFile);
+    const runId = randomUUID();
+    const runDir = path.join(app.workspace, '.flowqa/runs', runId);
+    await mkdir(runDir, { recursive: true });
+    const original = failureReport({ suite, runId, suiteHash: sha256(`${JSON.stringify(suite, null, 2)}\n`),
+      target: { name: 'demo', url: 'http://127.0.0.1:4178' }, startedAt: '2026-11-03T00:00:00Z',
+      finishedAt: '2026-11-03T00:00:01Z', blockedReasons: new Map() }, 'failed', 'Test failed');
+    const reportFile = path.join(runDir, 'qa-report.json');
+    const save = async (item: QAReport) => writeFile(reportFile, JSON.stringify(item));
+    const route = `${app.server.url}/api/rerun?runId=${runId}`;
+    await save(original);
+    assert.equal((await fetch(route)).status, 200, 'The exact pretty JSON plus newline hash is accepted.');
+    await save({ ...original, suiteHash: sha256(JSON.stringify(suite)) });
+    assert.equal((await fetch(route)).status, 409, 'The compact UI hash is not a report snapshot hash.');
+    await save(original);
+    await writeFile(suiteFile, JSON.stringify(suite));
+    assert.equal((await fetch(route)).status, 200, 'JSON formatting alone does not change the parsed suite hash.');
+    await writeFile(suiteFile, JSON.stringify({ ...suite, title: 'Edited later' }));
+    const changedSuite = await fetch(route);
+    assert.equal(changedSuite.status, 409);
+    assert.equal((await changedSuite.json() as { error: string }).error,
+      'The saved case file changed since this run. Review it before rerunning.');
+    await writeFile(suiteFile, suiteBytes);
+
+    await writeFile(sourceFile, 'Edited source');
+    assert.equal((await fetch(route)).status, 409);
+    await rm(sourceFile);
+    const missingSource = await fetch(route);
+    assert.equal(missingSource.status, 409);
+    assert.equal((await missingSource.json() as { error: string }).error, 'The saved case file or source flow was not found.');
+    await writeFile(sourceFile, sourceBytes);
+    await writeFile(suiteFile, JSON.stringify({ ...suite, source: { file: '../unsafe.md', sha256: suite.source!.sha256 } }));
+    assert.equal((await fetch(route)).status, 409);
+    await writeFile(suiteFile, suiteBytes);
+
+    const duplicateFile = path.join(app.workspace, 'cases/duplicate.json');
+    await writeFile(duplicateFile, suiteBytes);
+    const ambiguous = await fetch(route);
+    assert.equal(ambiguous.status, 409);
+    assert.equal((await ambiguous.json() as { error: string }).error, 'Multiple saved case files match this report.');
+    await rm(duplicateFile);
+    await rm(suiteFile);
+    assert.equal((await fetch(route)).status, 409);
+    await writeFile(suiteFile, suiteBytes);
+
+    await save({ ...original, cases: original.cases.slice(0, 2) });
+    assert.equal((await fetch(route)).status, 409, 'A full report must cover every saved case.');
+    await save({ ...original, cases: [{ ...original.cases[0]!, id: 'UNKNOWN' }, ...original.cases.slice(1)] });
+    assert.equal((await fetch(route)).status, 409, 'Every report case must exist in the saved suite.');
+    await save({ ...original, cases: [{ ...original.cases[0]!, id: '' }, ...original.cases.slice(1)] });
+    assert.equal((await fetch(route)).status, 404, 'The shared report loader rejects empty IDs.');
+    await save({ ...original, cases: [original.cases[0]!, original.cases[0]!, ...original.cases.slice(2)] });
+    assert.equal((await fetch(route)).status, 404, 'The shared report loader rejects duplicate IDs.');
+
+    const selected = selectCases(suite, [suite.cases[0]!.id, suite.cases[2]!.id]);
+    const partial = failureReport({ suite: selected.suite, selection: selected.selection, runId,
+      suiteHash: original.suiteHash, target: original.target, startedAt: original.startedAt,
+      finishedAt: original.finishedAt, blockedReasons: new Map() }, 'failed', 'Test failed');
+    partial.cases[0]!.status = 'failed';
+    partial.cases[1]!.status = 'passed';
+    await save(partial);
+    const prepared = await fetch(route);
+    assert.equal(prepared.status, 200);
+    assert.deepEqual((await prepared.json() as { caseIds: string[] }).caseIds, [suite.cases[0]!.id]);
+    await save({ ...partial, selection: { ...partial.selection!, totalCases: 4 } });
+    assert.equal((await fetch(route)).status, 409, 'Partial metadata must describe the current full suite.');
+    await save({ ...partial, selection: { ...partial.selection!, caseIds: [suite.cases[1]!.id, suite.cases[2]!.id] } });
+    assert.equal((await fetch(route)).status, 404, 'The shared report loader preserves its selection contract.');
+    assert.equal((await fetch(`${app.server.url}/api/rerun`)).status, 400);
+    assert.equal((await fetch(`${app.server.url}/api/rerun?runId=..%2Fother`)).status, 400);
+  } finally { await app.close(); }
 });
 
 test('comparison API reads report JSON without Markdown and enforces locale, compatibility, and origin checks', async () => {

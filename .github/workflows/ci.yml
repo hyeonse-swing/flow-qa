@@ -40,6 +40,7 @@ jobs:
             output/playwright/i18n/result.json
             output/playwright/comparison/result.json
             output/playwright/selection/result.json
+            output/playwright/rerun/result.json
             .flowqa/verification.md
           if-no-files-found: ignore
   publish:

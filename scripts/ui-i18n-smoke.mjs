@@ -468,6 +468,7 @@ try {
   await page.locator('#technical-details summary').click();
   await page.locator('#save-btn').click();
   await page.waitForFunction(() => document.querySelector('#draft-source').textContent.includes('saved cases'));
+  await page.waitForFunction(() => !document.querySelector('#flow-input').disabled);
   const savedSourceLess = JSON.parse(await page.locator('#suite-editor').inputValue());
   assert.equal(savedSourceLess.source, undefined);
   assert.equal(await hasBeforeUnloadWarning(), false, 'An unchanged saved source-less suite is clean.');

@@ -72,6 +72,16 @@ From version `0.2.7`, **Run history → Run status** filters the loaded reports 
 
 From version `0.2.9`, **Run history → Search runs** matches part of a suite ID, run ID, or target name. Matching ignores letter case and surrounding whitespace, and supports Korean target names. Search combines with **Run status**; clear the search to return to the selected status. The query stays through navigation, language changes, and automatic report updates, and resets on page reload. Search covers the most recent 50 reports loaded by the UI, not older records, target URLs, or individual case content. Changing the query keeps the open report and its downloads available.
 
+### Prepare failed cases
+
+From `0.5.0`, open **Run history → Detailed report → Prepare failed/error cases**. Only cases whose recorded status is `failed` or `error` are selected; `passed`, `flaky`, `blocked`, and `skipped` are excluded. The button is unavailable when no eligible cases exist or an operation is active. Preparation does not execute tests, call a model, or change files.
+
+The UI finds exactly one saved case file with the report's suite ID, verifies its complete parsed content against the run's snapshot hash, and verifies its linked source Markdown. Missing, changed, ambiguous, or unreadable inputs stop preparation without replacing your draft. Open the current case file from the library and review it manually when the test definition has changed. An unsaved draft requires confirmation before replacement.
+
+Successful preparation opens Scenario with the original source and failed/error selection. The prior target is selected only when its current name and settings still match the recorded target. Otherwise the target is cleared for explicit selection. Review confirmation is always cleared; inspect the selected cases and target before pressing **Run QA**. The normal execution-time file, source, and target checks still apply. Each selected case must establish its own starting state. Mobile target matching compares configured selectors, not physical device identity.
+
+The preparation notice identifies the original run. The next execution creates a separate ordinary report with its selected scope; it does not overwrite the original report or store a persistent parent-run link. Selection stays through navigation, language changes, and polling, but resets on page reload.
+
 ### Compare two runs
 
 From version `0.3.0`, open **Run history → Compare two runs**, choose a **Baseline run** and **Current run**, then compare. Both selectors use the most recent 50 loaded reports, independently of the history search and status filter. The reports must belong to the same suite ID and recorded target settings: a matching web URL, or mobile platform, app ID, and device. Target display names may differ. Mobile reports record the configured device selector, which can be a name; all mobile comparisons warn that matching selectors do not establish that the same physical device was used. Comparing does not run tests, call a model, or change case review.

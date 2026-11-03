@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -123,7 +124,20 @@ try {
   const koreanComparison = await fetch(url + comparisonRoute, { headers: { 'Accept-Language': 'ko' } });
   assert.equal(koreanComparison.status, 200);
   assert.match((await koreanComparison.json()).markdown, /비교/);
-  const partialRun = await fetch(url + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flowqa-token': state.csrfToken }, body: JSON.stringify({ suite: 'task-flow.json', suiteHash: suite.suiteHash, targetName: 'demo', targetURL: state.targets[0].url, caseIds: ['TC-002'] }) });
+  // A synthetic failed report exercises preparation in the installed package;
+  // the prepared selection then performs a real browser run.
+  const failedFixture = { ...report, runId: randomUUID(), status: 'failed', cases: report.cases.map(item => ({ ...item, status: item.id === 'TC-002' ? 'failed' : 'passed' })) };
+  const fixtureDir = path.join(consumer, '.flowqa/ui-demo-en/.flowqa/runs', failedFixture.runId);
+  await mkdir(fixtureDir, { recursive: true });
+  await writeFile(path.join(fixtureDir, 'qa-report.json'), JSON.stringify(failedFixture));
+  await writeFile(path.join(fixtureDir, 'qa-report.md'), '# Synthetic failed report for package verification\n');
+  const prepared = await (await get('/api/rerun?runId=' + failedFixture.runId)).json();
+  assert.equal(prepared.originRunId, failedFixture.runId);
+  assert.equal(prepared.file, 'task-flow.json');
+  assert.deepEqual(prepared.caseIds, ['TC-002']);
+  assert.equal(prepared.targetMatches, true);
+  assert.equal((await (await get('/api/state')).json()).active, null, 'Preparation never starts a run.');
+  const partialRun = await fetch(url + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flowqa-token': state.csrfToken }, body: JSON.stringify({ suite: prepared.file, suiteHash: prepared.suiteHash, targetName: prepared.targetName, targetFingerprint: prepared.targetFingerprint, caseIds: prepared.caseIds }) });
   assert.equal(partialRun.status, 202);
   const partialDeadline = Date.now() + 90_000;
   do {
@@ -142,7 +156,7 @@ try {
   assert.ok(partialComparison.comparison.warnings.includes('selection-changed'));
   assert.equal(partialComparison.comparison.counts.missing, 2);
   assert.equal(partialComparison.comparison.counts.unchanged, 1);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

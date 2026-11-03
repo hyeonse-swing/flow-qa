@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.5.0: prepare failed cases from a report
+
+Adds **Prepare failed/error cases** to detailed reports. It loads the unchanged saved suite, selects only recorded `failed` and `error` cases in suite order, and opens Scenario with a fresh review requirement. Passed, flaky, blocked, and skipped cases are excluded. Preparation is read-only and never starts a run or calls a model. Unsaved drafts require confirmation; failed preparation and late responses after navigation preserve the draft.
+
+Preparation requires one matching saved suite, the exact parsed suite snapshot hash, a valid linked source, and coherent full/partial report IDs. Missing, changed, or ambiguous inputs stop preparation with guidance. A changed or missing target is cleared for explicit selection; even a matching target requires renewed review. Existing execution-time checks remain in force. The next run writes its own ordinary selected-scope report; the original report remains unchanged, and no persistent parent-run link is added.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-03: 117 tests, type checking, UI syntax and design-system audit, and demo/UI checks passed. The dedicated Chromium smoke covered all six case statuses, unsaved-draft acceptance/cancellation, changed suite and target, navigation during a delayed response, English/Korean, and a 390px layout. It executed two prepared cases successfully with zero requests from the excluded sentinel. A fresh tarball installation prepared a synthetic failed report and ran that selection in a real browser, alongside full-run/comparison checks (seven passing browser cases). The existing import smoke now waits for save completion before asserting download readiness. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.5.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.5.0)
+- Release: [GitHub 0.5.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.5.0)
+
 ## 0.4.0: run selected cases
 
 Adds case selection to the execution panel and repeated `--case <id>` flags to CLI runs. Selecting or clearing cases resets UI review, and execution still requires the reviewed file and target fingerprints. Unknown, duplicate, and empty selections are rejected. Selection is preserved across navigation, language changes, and polling, while a new draft starts with all cases selected.
@@ -122,7 +133,7 @@ Locally verified on macOS with Node.js 24.14.1 on 2026-10-12: 89 tests, type che
 
 A push to `main` publishes only when `package.json` changes to a new plain `X.Y.Z` version. Pull requests and pushes without a version change run verification without publishing. The package and lockfile versions must agree; the version must increase, and registry errors stop the release. Rerunning a successful publication skips the existing immutable npm version.
 
-The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification matrix on Ubuntu and macOS, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag, requires the registry's `gitHead` to match the workflow commit, and checks the published package with a fresh consumer installation, two full Chromium demo runs plus a one-case selected run (seven cases), and comparison of their saved reports. The commit check also applies when retrying an already published version. No npm token is stored in GitHub secrets. After the published package passes its consumer smoke check, a separate job creates the matching GitHub tag and release at the exact verified commit. It preserves existing releases and rejects a tag pointing to another commit. Rerunning an older release does not replace a newer latest release.
+The `publish` job in [ci.yml](../.github/workflows/ci.yml) waits for the full verification matrix on Ubuntu and macOS, then publishes through npm trusted publishing (OIDC). It uses the `latest` tag, requires the registry's `gitHead` to match the workflow commit, and checks the published package with a fresh consumer installation, two full Chromium demo runs plus a one-case selected run prepared from a synthetic failed report (seven cases), and comparison of their saved reports. The commit check also applies when retrying an already published version. No npm token is stored in GitHub secrets. After the published package passes its consumer smoke check, a separate job creates the matching GitHub tag and release at the exact verified commit. It preserves existing releases and rejects a tag pointing to another commit. Rerunning an older release does not replace a newer latest release.
 
 For the next release, update the release notes and current installation examples, then bump the version before committing and pushing:
 
