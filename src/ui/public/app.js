@@ -716,6 +716,10 @@
       const attemptCount = (item.attempts || []).length;
       const attemptCountLabel = t(attemptCount === 1 ? 'report.attemptCountSingular' : 'report.attemptCountPlural', { count: attemptCount });
       const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)} · ${attemptCountLabel}`));
+      if (Array.isArray(item.attempts) && item.attempts.length > 0 && item.attempts.every((attempt) => typeof attempt?.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) {
+        const totalAttemptTime = item.attempts.reduce((total, attempt) => total + attempt.durationMs, 0);
+        if (Number.isFinite(totalAttemptTime)) section.append(el('p', 'hint case-attempt-time', t('report.totalAttemptTime', { duration: totalAttemptTime })));
+      }
       if (item.reason) section.append(el('p', '', t('app.reason', { reason: item.reason })));
       section.append(el('p', '', t('app.expected'))); const expected = el('ul', 'compact-list'); for (const check of item.expected || []) expected.append(el('li', '', check)); section.append(expected);
       for (const [attemptIndex, attempt] of (item.attempts || []).entries()) {

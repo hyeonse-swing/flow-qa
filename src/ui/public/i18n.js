@@ -152,6 +152,7 @@
     'report.caseCount': ['Showing {shown} of {total} report cases', '보고서 케이스 {total}개 중 {shown}개 표시'],
     'report.attemptCountSingular': ['{count} attempt', '시도 {count}회'],
     'report.attemptCountPlural': ['{count} attempts', '시도 {count}회'],
+    'report.totalAttemptTime': ['Total attempt time: {duration}ms', '시도 시간 합계: {duration}ms'],
     'report.empty': ['This report has no cases.', '이 보고서에는 케이스가 없습니다.'],
     'report.noMatches': ['No cases match these filters.', '필터에 맞는 케이스가 없습니다.'],
     'report.filterHint': ['Filters only change the displayed cases. Downloads include all cases, and failed/error preparation uses all recorded failed/error cases regardless of visibility.', '필터는 표시되는 케이스에만 적용됩니다. 다운로드에는 모든 케이스가 포함되고, 실패·오류 준비에는 표시 여부와 관계없이 기록된 모든 실패·오류 케이스가 사용됩니다.'],

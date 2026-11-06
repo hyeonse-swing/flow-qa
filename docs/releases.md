@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.2: show total recorded attempt time per case
+
+Detailed report cases now show **Total attempt time**, summing saved attempt durations in milliseconds. The total includes all recorded attempts and supports English/Korean labels. No attempts, incomplete/invalid timing, or a non-finite sum omits the total; a valid measured zero remains visible. This is recorded attempt time, not overall elapsed run time. Search/filter behavior, report exports, and execution remain unchanged.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-07 (Asia/Tokyo): 118 tests, type checking, UI syntax/design-system audit, the report-explorer browser smoke, and package checks passed. Browser fixtures covered single/multiple attempt totals, valid zero, no attempts, missing/negative/string/null timing, overflow, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and checked the total against the recorded duration in the installed UI. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.2`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.2)
+- Release: [GitHub 0.8.2](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.2)
+
 ## 0.8.1: show recorded attempt counts in report headings
 
 Detailed report case headings now show their recorded attempt count, including zero, with English singular/plural and Korean labels. This makes repeated or absent attempts visible before reading the attempt details. The count uses only the saved attempt list; case status, search/filter behavior, evidence links, report exports, and execution remain unchanged.
