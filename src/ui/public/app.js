@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: { search: '', status: 'all' }, rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: { search: '', status: 'all', sort: 'recorded' }, rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -636,7 +636,7 @@
     catch (error) { showError(error); }
     finally { app.stopping = false; readiness(); }
   }
-  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = { search: '', status: 'all' }; app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = { search: '', status: 'all', sort: 'recorded' }; app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
   async function prepareFailedCases() { await work(async () => {
     const runId = app.selectedRun;
     const report = app.report;
@@ -672,6 +672,11 @@
     } catch (error) { if (runId === app.selectedRun && locale === i18n.locale()) showError(error); }
   }
   const reportStatuses = ['all', 'failed-error', 'passed', 'failed', 'error', 'blocked', 'flaky', 'skipped'];
+  function reportCaseTotalAttemptDurationMs(attempts) {
+    if (!Array.isArray(attempts) || attempts.length === 0 || !attempts.every((attempt) => typeof attempt?.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) return null;
+    const total = attempts.reduce((sum, attempt) => sum + attempt.durationMs, 0);
+    return Number.isFinite(total) ? total : null;
+  }
   function reportCaseMatchesSearch(item, query) {
     if (!query) return true;
     const values = [item.id, item.title, item.reason, ...(item.expected || [])];
@@ -697,9 +702,11 @@
       const label = option.value === 'all' ? t('report.filterAll') : option.value === 'failed-error' ? t('report.filterFailedError') : i18n.status(option.value);
       option.textContent = `${label} (${counts[option.value]})`;
     }
+    for (const option of $('report-case-sort').options) option.textContent = t(option.value === 'duration-desc' ? 'report.sortDurationDescending' : 'report.sortRecorded');
     if ($('report-case-search').value !== app.reportFilter.search) $('report-case-search').value = app.reportFilter.search;
     $('report-case-status').value = app.reportFilter.status;
-    $('report-case-reset').disabled = !app.reportFilter.search && app.reportFilter.status === 'all';
+    $('report-case-sort').value = app.reportFilter.sort;
+    $('report-case-reset').disabled = !app.reportFilter.search && app.reportFilter.status === 'all' && app.reportFilter.sort === 'recorded';
     return cases;
   }
   function renderReportCases() {
@@ -707,19 +714,25 @@
     const cases = renderReportFilters();
     const query = app.reportFilter.search.trim().toLowerCase();
     const status = app.reportFilter.status;
-    const shown = cases.filter((item) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
-    $('report-case-count').textContent = t('report.caseCount', { shown: shown.length, total: cases.length });
+    const shown = cases.map((item, index) => ({ item, index })).filter(({ item }) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
+    if (app.reportFilter.sort === 'duration-desc') shown.sort((left, right) => {
+      const leftDuration = reportCaseTotalAttemptDurationMs(left.item.attempts);
+      const rightDuration = reportCaseTotalAttemptDurationMs(right.item.attempts);
+      if (leftDuration === null) return rightDuration === null ? left.index - right.index : 1;
+      if (rightDuration === null) return -1;
+      return rightDuration - leftDuration || left.index - right.index;
+    });
+    const displayed = shown.map(({ item }) => item);
+    $('report-case-count').textContent = t('report.caseCount', { shown: displayed.length, total: cases.length });
     const host = $('report-case-list'); replace(host);
     if (!cases.length) { host.append(el('p', 'empty', t('report.empty'))); return; }
-    if (!shown.length) { host.append(el('p', 'empty', t('report.noMatches'))); return; }
-    for (const item of shown) {
+    if (!displayed.length) { host.append(el('p', 'empty', t('report.noMatches'))); return; }
+    for (const item of displayed) {
       const attemptCount = (item.attempts || []).length;
       const attemptCountLabel = t(attemptCount === 1 ? 'report.attemptCountSingular' : 'report.attemptCountPlural', { count: attemptCount });
       const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)} · ${attemptCountLabel}`));
-      if (Array.isArray(item.attempts) && item.attempts.length > 0 && item.attempts.every((attempt) => typeof attempt?.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) {
-        const totalAttemptTime = item.attempts.reduce((total, attempt) => total + attempt.durationMs, 0);
-        if (Number.isFinite(totalAttemptTime)) section.append(el('p', 'hint case-attempt-time', t('report.totalAttemptTime', { duration: totalAttemptTime })));
-      }
+      const totalAttemptTime = reportCaseTotalAttemptDurationMs(item.attempts);
+      if (totalAttemptTime !== null) section.append(el('p', 'hint case-attempt-time', t('report.totalAttemptTime', { duration: totalAttemptTime })));
       if (item.reason) section.append(el('p', '', t('app.reason', { reason: item.reason })));
       section.append(el('p', '', t('app.expected'))); const expected = el('ul', 'compact-list'); for (const check of item.expected || []) expected.append(el('li', '', check)); section.append(expected);
       for (const [attemptIndex, attempt] of (item.attempts || []).entries()) {
@@ -841,7 +854,8 @@
     $('report-rerun').addEventListener('click', prepareFailedCases);
     $('report-case-search').addEventListener('input', (event) => { app.reportFilter.search = event.currentTarget.value; renderReportCases(); });
     $('report-case-status').addEventListener('change', (event) => { app.reportFilter.status = event.currentTarget.value; renderReportCases(); });
-    $('report-case-reset').addEventListener('click', () => { app.reportFilter = { search: '', status: 'all' }; renderReportCases(); });
+    $('report-case-sort').addEventListener('change', (event) => { app.reportFilter.sort = event.currentTarget.value; renderReportCases(); });
+    $('report-case-reset').addEventListener('click', () => { app.reportFilter = { search: '', status: 'all', sort: 'recorded' }; renderReportCases(); });
     $('target-form').addEventListener('submit', saveTarget);
     $('target-kind').addEventListener('change', targetFields); targetFields();
     $('language-select').addEventListener('change', (event) => i18n.setLocale(event.currentTarget.value));

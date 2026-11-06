@@ -105,7 +105,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .runtime-panel > p { margin: 0; overflow-wrap: anywhere; }
 #case-readiness { margin: 0 0 12px; }
 #report-content { margin-top: 20px; }
-.report-case-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 24px; }
+.report-case-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; align-items: end; gap: 12px; margin-top: 24px; }
 .report-case-filters > div { min-width: 0; }
 .report-case-filters label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
 .report-case-filters input, .report-case-filters select { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); }
@@ -200,6 +200,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .model-block h3 { margin: 0 0 7px; font-size: 16px; }
 .model-block > p { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 @media (max-width: 1100px) {
+  .report-case-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .report-case-filters .button { justify-self: start; }
   .workflow { grid-template-columns: minmax(0, 1fr); }
   .execution-section { grid-column: auto; }
   .summary { min-height: 170px; }

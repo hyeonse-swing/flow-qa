@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.2
+npm install -g @ihyeon/flow-qa@0.8.3
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -82,13 +82,15 @@ When recent run records change, a single loaded page refreshes automatically. If
 
 From `0.8.1`, each case heading also shows the number of attempts recorded in that report. Zero attempts is shown explicitly. This count does not infer a retry policy or change the recorded case status. From `0.8.2`, **Total attempt time** sums the recorded attempt durations in milliseconds. It is not the overall elapsed run time. The total is shown only when at least one attempt exists and every duration is a finite, nonnegative number; incomplete/invalid timing is omitted, while a recorded total of zero is shown.
 
+From `0.8.3`, **Case order → Longest attempt time first** sorts visible cases by their total recorded attempt time. Equal totals keep their recorded order. Missing, incomplete, invalid, or overflowing totals appear after valid totals, including zero. **Recorded order** restores the original report order.
+
 From `0.8.0`, open **Run history → Detailed report** and use **Search cases** with **Case status** to narrow the displayed results. Search ignores case and surrounding whitespace, and matches case IDs, titles, reasons, expected results, attempt errors, secondary errors, step labels, and step errors. User-written Korean text is supported. Artifact paths and translated status labels are not search fields.
 
-**Failed/error only** shows those two recorded statuses; the other status choices distinguish passed, failed, error, blocked, flaky, and skipped. Status-option counts describe the entire open report, while the displayed count shows matches out of that report's recorded cases. A partial run's omitted cases are not included in those counts; its selected/full-suite scope remains visible separately. Report-level warnings remain visible even when no case matches. **Reset filters** clears both search and status.
+**Failed/error only** shows those two recorded statuses; the other status choices distinguish passed, failed, error, blocked, flaky, and skipped. Status-option counts describe the entire open report, while the displayed count shows matches out of that report's recorded cases. A partial run's omitted cases are not included in those counts; its selected/full-suite scope remains visible separately. Report-level warnings remain visible even when no case matches. **Reset filters** clears search and status and restores recorded order.
 
-Filters stay while navigating, changing language, refreshing history/settings, or reopening the same report. Successfully opening another report resets them; a failed report load preserves the current report and filters. Filters reset on page reload. Evidence links still refer to each case's original attempt and artifact.
+Filters and sorting stay while navigating, changing language, refreshing history/settings, or reopening the same report. Successfully opening another report resets them; a failed report load preserves the current report, filters, and sorting. Filters and sorting reset on page reload. Evidence links still refer to each case's original attempt and artifact.
 
-These controls change only displayed cases. Markdown and JSON downloads contain every recorded case, and **Prepare failed/error cases** still prepares every recorded failed/error case from the report, even if hidden by the current filters. Filtering does not alter a saved report, the scenario draft, review confirmation, or execution selection.
+These controls change only displayed cases. Markdown and JSON downloads contain every recorded case, and **Prepare failed/error cases** still prepares every recorded failed/error case from the report, even if hidden by the current filters. Filtering and sorting do not alter a saved report, the scenario draft, review confirmation, or execution selection.
 
 ### Prepare failed cases
 

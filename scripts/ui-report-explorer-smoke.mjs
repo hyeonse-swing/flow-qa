@@ -56,7 +56,8 @@ try {
   const { durationMs: omittedDuration, ...missingDuration } = baseAttempt;
   const durationEdgeAttempts = [[], [{ ...baseAttempt, durationMs: 0 }], [baseAttempt, missingDuration],
     [{ ...baseAttempt, durationMs: -1 }], [{ ...baseAttempt, durationMs: '20' }], [{ ...baseAttempt, durationMs: null }],
-    [{ ...baseAttempt, durationMs: Number.MAX_VALUE }, { ...baseAttempt, durationMs: Number.MAX_VALUE }]];
+    [{ ...baseAttempt, durationMs: Number.MAX_VALUE }, { ...baseAttempt, durationMs: Number.MAX_VALUE }],
+    [baseAttempt], [baseAttempt], [{ ...baseAttempt, durationMs: 5 }], [{ ...baseAttempt, durationMs: 0 }]];
   const durationEdges = { ...report, runId: randomUUID(), cases: durationEdgeAttempts.map((attempts, index) => ({
     id: `DURATION-${index}`, title: 'Duration fixture', status: 'passed', expected: [], attempts,
   })) };
@@ -83,6 +84,8 @@ try {
   const cases = () => page.locator('#report-content .case-report');
   const search = query => page.locator('#report-case-search').fill(query);
   const status = value => page.locator('#report-case-status').selectOption(value);
+  const sort = value => page.locator('#report-case-sort').selectOption(value);
+  const caseIds = async () => (await cases().locator('h3').allTextContents()).map(heading => heading.split(' · ')[0]);
   const reset = () => page.locator('#report-case-reset').click();
   const download = async id => {
     const pending = page.waitForEvent('download'); await page.locator(id).click();
@@ -99,6 +102,11 @@ try {
   assert.equal(await cases().nth(2).locator('.case-attempt-time').count(), 0, 'No attempts must not imply a measured zero duration.');
   assert.equal(await page.locator('#report-content img').count(), 0);
   assert.match(await page.locator('#report-case-count').textContent(), /6/);
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
+  assert.equal(await page.locator('#report-case-reset').isDisabled(), true);
+  await sort('duration-desc');
+  assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
+  assert.equal(await page.locator('#report-case-reset').isEnabled(), true, 'Sorting alone enables reset.');
   for (const [index, value] of statuses.entries()) {
     await status(value);
     assert.equal(await cases().count(), 1, value);
@@ -121,6 +129,8 @@ try {
   assert.equal(evidenceURL.searchParams.get('artifact'), '1');
   assert.equal(await (await fetch(evidenceURL)).text(), 'Approved evidence from original attempt 2 / artifact 2');
   await reset();
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
+  assert.deepEqual(await caseIds(), report.cases.map(item => item.id));
   for (const query of ['ASSERTION_MISMATCH', 'outer PACKET', 'STEP_MISMATCH', 'nested token', 'TEARDOWN_NOTE', 'secondary teardown', 'Attempt step 2']) {
     await search(query); assert.equal(await cases().count(), 1, query); assert.ok((await cases().textContent()).includes('CASE-2'));
   }
@@ -132,12 +142,15 @@ try {
   assert.match(await page.locator('#report-case-count').textContent(), /0.*6|6.*0/);
   assert.equal(await page.locator('#report-rerun').isEnabled(), true, 'Hidden failures remain eligible for preparation.');
   await reset(); assert.equal(await cases().count(), 6);
-  await status('failed-error'); await search('case-2');
+  await status('failed-error'); await search('case-2'); await sort('duration-desc');
   await page.locator('#language-select').selectOption('ko');
   assert.match(await cases().locator('h3').textContent(), / · 시도 2회$/);
   assert.equal(await cases().locator('.case-attempt-time').textContent(), '시도 시간 합계: 80ms');
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2');
   assert.equal(await page.locator('#report-case-status').inputValue(), 'failed-error');
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc');
+  assert.equal(await page.locator('label[for="report-case-sort"]').textContent(), '케이스 정렬');
+  assert.equal(await page.locator('#report-case-sort option:checked').textContent(), '시도 시간이 긴 순');
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /실패.*오류.*2/);
   await page.locator('[data-view="scenario"]').click();
   assert.equal(await page.locator('#suite-editor').inputValue(), draftBefore);
@@ -150,6 +163,7 @@ try {
   assert.equal(await cases().count(), 1);
   assert.equal(await page.locator('#report-case-status').inputValue(), 'failed-error');
   await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc', 'Sort persists through navigation and refresh.');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-explorer-ko-mobile.png') });
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -157,22 +171,26 @@ try {
   await page.waitForFunction(() => document.querySelector('#history-list').getAttribute('aria-busy') === 'false');
   await open();
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2', 'Reloading the same report preserves filters.');
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc');
   const failedLoad = page.waitForResponse(response => response.url().includes('/api/report?') && response.url().includes(unreadable.runId));
   await page.locator(`#history-list [data-run-id="${unreadable.runId}"] [data-action="view-report"]`).click();
   assert.equal((await failedLoad).status(), 404);
   await page.waitForFunction(() => !document.querySelector('#flow-input').disabled);
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2');
   assert.ok((await page.locator('#report-heading').textContent()).includes(report.runId));
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc', 'A failed load preserves sorting.');
   await open(partial.runId);
   assert.equal(await page.locator('#report-case-search').inputValue(), '');
   assert.equal(await page.locator('#report-case-status').inputValue(), 'all');
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded', 'Opening another report resets sorting.');
   assert.equal(await cases().count(), 2);
   assert.match(await page.locator('#report-case-count').textContent(), /2/);
   assert.match(await page.locator('#report-content .selection-scope').textContent(), /2.*6|6.*2/);
   await open(empty.runId);
+  await sort('duration-desc');
   assert.equal(await cases().count(), 0);
   assert.match(await page.locator('#report-content').textContent(), /기록된.*없|케이스.*없/);
-  await open(); await status('passed');
+  await open(); await status('passed'); await sort('duration-desc');
   const preparing = page.waitForResponse(response => response.url().includes('/api/rerun?'));
   await page.locator('#report-rerun').click();
   assert.equal((await preparing).status(), 200);
@@ -187,10 +205,15 @@ try {
   assert.equal(await cases().count(), durationEdgeAttempts.length);
   assert.equal(await cases().nth(1).locator('.case-attempt-time').textContent(), 'Total attempt time: 0ms');
   for (const index of [0, 2, 3, 4, 5, 6]) assert.equal(await cases().nth(index).locator('.case-attempt-time').count(), 0, `No misleading duration for edge fixture ${index}`);
+  await sort('duration-desc');
+  assert.deepEqual(await caseIds(), [7, 8, 9, 1, 10, 0, 2, 3, 4, 5, 6].map(index => `DURATION-${index}`), 'Valid totals sort descending, ties retain recorded order, and unknown totals follow valid zero.');
+  assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Sorting never mutates the exported report.');
+  await sort('recorded');
+  assert.deepEqual(await caseIds(), durationEdges.cases.map(item => item.id));
   assert.deepEqual(errors, []);
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
   const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true, reportAttemptTime: true,
-    combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
+    reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);

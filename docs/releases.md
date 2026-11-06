@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.3: find slow cases by recorded attempt time
+
+Detailed reports now offer **Case order → Longest attempt time first**. The view sorts by the sum of valid recorded attempt durations, keeps equal totals in their original order, and places unknown or invalid totals after all valid totals, including zero. **Recorded order** restores the original order; **Reset filters** also resets sorting. English and Korean labels are available.
+
+Sorting combines with case search and status filters, survives navigation, language changes, refreshes, and reopening the same report, and resets only when another report opens successfully. Complete downloads, evidence indices, and failed/error preparation keep their original data and scope.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-07 (Asia/Tokyo): 118 tests, type checking, UI syntax/design-system audit, the report-explorer browser smoke, and package checks passed. Browser fixtures covered descending totals, stable ties, valid zero, unknown/invalid timing, recorded-order restoration, filters, full exports, original evidence links, rerun scope, persistence/reset behavior, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and verified sorting and reset in the installed UI. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.3`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.3)
+- Release: [GitHub 0.8.3](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.3)
+
 ## 0.8.2: show total recorded attempt time per case
 
 Detailed report cases now show **Total attempt time**, summing saved attempt durations in milliseconds. The total includes all recorded attempts and supports English/Korean labels. No attempts, incomplete/invalid timing, or a non-finite sum omits the total; a valid measured zero remains visible. This is recorded attempt time, not overall elapsed run time. Search/filter behavior, report exports, and execution remain unchanged.

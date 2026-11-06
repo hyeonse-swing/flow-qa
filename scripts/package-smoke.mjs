@@ -141,6 +141,9 @@ try {
   await page.locator('[data-view="history"]').click();
   await page.locator(`#history-list [data-run-id="${failedFixture.runId}"] [data-action="view-report"]`).click();
   await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), failedFixture.runId);
+  await page.locator('#report-case-sort').selectOption('duration-desc');
+  const sortedCaseIds = [...failedFixture.cases].sort((a, b) => b.attempts.reduce((sum, item) => sum + item.durationMs, 0) - a.attempts.reduce((sum, item) => sum + item.durationMs, 0)).map(item => item.id);
+  assert.deepEqual((await page.locator('#report-content .case-report h3').allTextContents()).map(heading => heading.split(' · ')[0]), sortedCaseIds);
   await page.locator('#report-case-status').selectOption('failed-error');
   assert.equal(await page.locator('#report-content .case-report').count(), 1);
   assert.match(await page.locator('#report-content .case-report h3').textContent(), / · 1 attempt$/);
@@ -153,6 +156,8 @@ try {
   assert.deepEqual(downloadedReport.cases, failedFixture.cases);
   await page.locator('#report-case-reset').click();
   assert.equal(await page.locator('#report-content .case-report').count(), 3);
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
+  assert.deepEqual((await page.locator('#report-content .case-report h3').allTextContents()).map(heading => heading.split(' · ')[0]), failedFixture.cases.map(item => item.id));
   await browser.close(); browser = null;
   const prepared = await (await get('/api/rerun?runId=' + failedFixture.runId)).json();
   assert.equal(prepared.originRunId, failedFixture.runId);
@@ -209,7 +214,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
