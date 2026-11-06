@@ -143,6 +143,7 @@ try {
   await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), failedFixture.runId);
   await page.locator('#report-case-status').selectOption('failed-error');
   assert.equal(await page.locator('#report-content .case-report').count(), 1);
+  assert.match(await page.locator('#report-content .case-report h3').textContent(), / · 1 attempt$/);
   await page.locator('#report-case-search').fill('TC-003');
   assert.equal(await page.locator('#report-content .case-report').count(), 0);
   const fullDownload = page.waitForEvent('download');
@@ -207,7 +208,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

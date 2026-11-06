@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.0
+npm install -g @ihyeon/flow-qa@0.8.1
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -79,6 +79,8 @@ Changing search or status restarts at the first page. The query, status, and loa
 When recent run records change, a single loaded page refreshes automatically. If several pages are loaded, the UI keeps them and shows an update hint. **Refresh history** restarts at the first page with the current filters and also picks up external edits or deletions of older records. Pagination is a live view, not a frozen snapshot: newly added records appear when refreshed, and reports changed externally while paging may move. Invalid, incomplete, or unsafe report files are excluded. Use the row actions to select any listed report for comparison, including older results.
 
 ### Explore cases in a report
+
+From `0.8.1`, each case heading also shows the number of attempts recorded in that report. Zero attempts is shown explicitly. This count does not infer a retry policy or change the recorded case status.
 
 From `0.8.0`, open **Run history → Detailed report** and use **Search cases** with **Case status** to narrow the displayed results. Search ignores case and surrounding whitespace, and matches case IDs, titles, reasons, expected results, attempt errors, secondary errors, step labels, and step errors. User-written Korean text is supported. Artifact paths and translated status labels are not search fields.
 

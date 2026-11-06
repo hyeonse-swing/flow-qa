@@ -33,6 +33,7 @@ try {
     steps: [{ api: 'assertVisible', label: `Attempt step ${index + 1}`, status: 'failed', error: { code: 'STEP_MISMATCH', message: 'Nested token missing' } }],
     error: { code: 'ASSERTION_MISMATCH', message: 'Outer packet missing' },
     secondaryErrors: [{ code: 'TEARDOWN_NOTE', message: 'Secondary teardown detail' }], artifacts: [] });
+  report.cases[0].attempts = [{ index: 0, status: 'passed', startedAt: report.startedAt, durationMs: 20, steps: [], secondaryErrors: [], artifacts: [] }];
   report.cases[1].attempts = [attempt(0), { ...attempt(1), artifacts: [
     { kind: 'log', redaction: 'incomplete', path: 'raw/artifacts/hidden-path-sentinel.txt' },
     { kind: 'log', redaction: 'complete', path: 'raw/artifacts/approved.txt' },
@@ -80,6 +81,10 @@ try {
   };
   await open();
   assert.equal(await cases().count(), 6);
+  const caseHeadings = await cases().locator('h3').allTextContents();
+  assert.match(caseHeadings[0], / · 1 attempt$/);
+  assert.match(caseHeadings[1], / · 2 attempts$/);
+  assert.match(caseHeadings[2], / · 0 attempts$/);
   assert.equal(await page.locator('#report-content img').count(), 0);
   assert.match(await page.locator('#report-case-count').textContent(), /6/);
   for (const [index, value] of statuses.entries()) {
@@ -117,6 +122,7 @@ try {
   await reset(); assert.equal(await cases().count(), 6);
   await status('failed-error'); await search('case-2');
   await page.locator('#language-select').selectOption('ko');
+  assert.match(await cases().locator('h3').textContent(), / · 시도 2회$/);
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2');
   assert.equal(await page.locator('#report-case-status').inputValue(), 'failed-error');
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /실패.*오류.*2/);
@@ -166,7 +172,7 @@ try {
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-explorer-en.png') });
   assert.deepEqual(errors, []);
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
-  const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true,
+  const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true,
     combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };

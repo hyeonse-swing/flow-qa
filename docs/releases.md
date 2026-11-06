@@ -2,6 +2,15 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.1: show recorded attempt counts in report headings
+
+Detailed report case headings now show their recorded attempt count, including zero, with English singular/plural and Korean labels. This makes repeated or absent attempts visible before reading the attempt details. The count uses only the saved attempt list; case status, search/filter behavior, evidence links, report exports, and execution remain unchanged.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-07 (Asia/Tokyo): 118 tests, type checking, UI syntax/design-system audit, the report-explorer browser smoke, and package checks passed. The existing report smoke now covers zero, one, and two recorded attempts, English singular/plural, Korean labels, and 390px layout alongside report filtering/export/evidence checks. A fresh tarball installation ran seven passing browser cases and verified the attempt count in the installed UI. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.1`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.1)
+- Release: [GitHub 0.8.1](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.1)
+
 ## 0.8.0: explore cases and errors within a report
 
 Detailed reports now support case-content search and status filters, including **Failed/error only**. Search covers IDs, titles, reasons, expectations, attempt/secondary errors, and step labels/errors. Status choices show counts from the complete open report, while the match count describes displayed cases. Partial-run scope and report-level warnings remain visible; empty reports are distinguished from filters with no matches.

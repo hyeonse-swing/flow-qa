@@ -713,7 +713,9 @@
     if (!cases.length) { host.append(el('p', 'empty', t('report.empty'))); return; }
     if (!shown.length) { host.append(el('p', 'empty', t('report.noMatches'))); return; }
     for (const item of shown) {
-      const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)}`));
+      const attemptCount = (item.attempts || []).length;
+      const attemptCountLabel = t(attemptCount === 1 ? 'report.attemptCountSingular' : 'report.attemptCountPlural', { count: attemptCount });
+      const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)} · ${attemptCountLabel}`));
       if (item.reason) section.append(el('p', '', t('app.reason', { reason: item.reason })));
       section.append(el('p', '', t('app.expected'))); const expected = el('ul', 'compact-list'); for (const check of item.expected || []) expected.append(el('li', '', check)); section.append(expected);
       for (const [attemptIndex, attempt] of (item.attempts || []).entries()) {
