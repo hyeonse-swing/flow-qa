@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -54,7 +54,11 @@
     });
     $('breadcrumb').textContent = t('app.breadcrumb', { name: t(names[name]) });
     $('sidebar').classList.remove('nav-open'); $('nav-toggle').setAttribute('aria-expanded', 'false');
-    if (name === 'history') { renderHistory(); renderComparisonOptions(); }
+    if (name === 'history') {
+      if (!app.history.loaded && !app.history.loading) refreshHistory();
+      else renderHistory();
+      renderComparisonOptions();
+    }
   }
   function suitePlatform() { return app.draft?.platform || 'web'; }
   function targetPlatform(target) { return target?.kind === 'mobile' ? 'mobile' : 'web'; }
@@ -266,24 +270,98 @@
       const button = el('button', 'button', t('app.load')); button.type = 'button'; button.addEventListener('click', () => loadSuite(suite.file)); row.append(copy, button); host.append(row);
     }
   }
+  function historyFilters() { return { query: $('history-search').value.trim(), status: $('history-status-filter').value }; }
   function renderHistory() {
+    const history = app.history;
     const host = $('history-list'); replace(host);
-    const runs = app.state?.runs || [];
-    if (!runs.length) { host.append(el('p', 'empty', t(app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty'))); return; }
-    const status = $('history-status-filter').value;
-    const query = $('history-search').value.trim().toLowerCase();
-    const matchingRuns = runs.filter((run) => {
-      const matchesStatus = !status || run.status === status;
-      const matchesSearch = !query || [run.suiteId, run.runId, run.target?.name]
-        .some((field) => String(field ?? '').toLowerCase().includes(query));
-      return matchesStatus && matchesSearch;
-    });
-    if (!matchingRuns.length) { host.append(el('p', 'empty', t(query ? 'app.historyNoSearchMatches' : 'app.historyNoStatusMatches'))); return; }
-    for (const run of matchingRuns) {
+    host.setAttribute('aria-busy', String(history.loading));
+    if (!history.runs.length) {
+      const { query, status } = historyFilters();
+      const key = history.loading ? 'history.loading' : history.error && !history.loaded ? 'history.loadError'
+        : query ? 'app.historyNoSearchMatches' : status ? 'app.historyNoStatusMatches'
+          : app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty';
+      host.append(el('p', 'empty', t(key)));
+    }
+    for (const run of history.runs) {
       const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
       const scope = selectionScope(run.selection); if (scope) copy.append(el('small', 'selection-scope', scope));
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
     }
+    const messages = [];
+    if (history.loaded) messages.push(t('history.pageCount', { count: history.runs.length }));
+    if (history.loading) messages.push(t(history.kind === 'more' ? 'history.loadingMore' : 'history.loading'));
+    if (history.error) messages.push(t(history.error === 'more' ? 'history.loadMoreError' : 'history.loadError'));
+    if (history.updatesAvailable) messages.push(t('history.updatesAvailable'));
+    if (history.loaded && !history.loading && !history.error && !history.nextCursor) messages.push(t('history.end'));
+    const status = $('history-page-status'); status.textContent = messages.join(' · ');
+    status.classList.toggle('report-errors', !!history.error);
+    const more = $('history-load-more');
+    more.hidden = !history.loaded || !history.nextCursor;
+    more.disabled = history.loading;
+    more.textContent = t(history.error === 'more' ? 'history.retryMore' : 'history.loadMore');
+  }
+  async function fetchHistoryPage(request, filters, cursor = null) {
+    const history = app.history;
+    const append = cursor !== null;
+    const params = new URLSearchParams({ query: filters.query, status: filters.status, limit: '50' });
+    if (append) params.set('cursor', cursor);
+    try {
+      const result = await api(`/api/runs?${params}`);
+      if (request !== history.request) return;
+      if (!Array.isArray(result.runs) || !(result.nextCursor === null || typeof result.nextCursor === 'string')) throw new Error('Invalid run history response.');
+      const seen = new Set(append ? history.runs.map((run) => run.runId) : []);
+      const incoming = result.runs.filter((run) => {
+        if (seen.has(run.runId)) return false;
+        seen.add(run.runId); return true;
+      });
+      history.runs = append ? [...history.runs, ...incoming] : incoming;
+      history.nextCursor = result.nextCursor;
+      history.pagesLoaded = append ? history.pagesLoaded + 1 : 1;
+      history.loaded = true;
+      history.error = null;
+      if (!append) history.updatesAvailable = false;
+    } catch {
+      if (request !== history.request) return;
+      history.error = append ? 'more' : 'first';
+    } finally {
+      if (request !== history.request) return;
+      history.loading = false; history.kind = null;
+      if (history.pendingRecentUpdate) {
+        history.pendingRecentUpdate = false;
+        if (history.pagesLoaded > 1 || history.error === 'more') history.updatesAvailable = true;
+        else if (history.loaded && !history.error) { refreshHistory(); return; }
+      }
+      renderHistory();
+    }
+  }
+  function refreshHistory(delay = 0) {
+    const history = app.history;
+    if (history.debounce !== null) clearTimeout(history.debounce);
+    history.debounce = null;
+    const request = ++history.request;
+    history.runs = []; history.nextCursor = null; history.pagesLoaded = 0; history.loaded = false;
+    history.loading = true; history.kind = 'first'; history.error = null; history.updatesAvailable = false; history.pendingRecentUpdate = false;
+    renderHistory();
+    const filters = historyFilters();
+    if (delay) history.debounce = setTimeout(() => { history.debounce = null; void fetchHistoryPage(request, filters); }, delay);
+    else void fetchHistoryPage(request, filters);
+  }
+  function loadMoreHistory() {
+    const history = app.history;
+    if (!history.loaded || history.loading || !history.nextCursor) return;
+    const request = ++history.request;
+    history.loading = true; history.kind = 'more'; history.error = null;
+    renderHistory();
+    void fetchHistoryPage(request, historyFilters(), history.nextCursor);
+  }
+  function recentRunsChanged() {
+    const history = app.history;
+    if (history.loading) { history.pendingRecentUpdate = true; return; }
+    if (!history.loaded) return;
+    if (history.pagesLoaded > 1) {
+      history.updatesAvailable = true;
+      renderHistory();
+    } else refreshHistory();
   }
   const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'];
   const comparisonCategoryKeys = { 'newly-failed': 'comparison.newlyFailed', 'now-passed': 'comparison.nowPassed', changed: 'comparison.changed', unchanged: 'comparison.unchanged', added: 'comparison.added', missing: 'comparison.missing' };
@@ -396,7 +474,7 @@
     const libraryChanged = JSON.stringify(app.state?.suites) !== JSON.stringify(state.suites);
     const historyChanged = JSON.stringify(app.state?.runs) !== JSON.stringify(state.runs);
     app.state = state; app.connected = true;
-    renderActive(); if (libraryChanged) renderLibrary(); if (historyChanged) { renderHistory(); renderComparisonOptions(); }
+    renderActive(); if (libraryChanged) renderLibrary(); if (historyChanged) { recentRunsChanged(); renderComparisonOptions(); }
     if (full || initialize) { targetOptions(); modelForms(); }
     if (previousActive?.kind === 'run' && !state.active) { if (state.lastError) notice(state.lastError, true); else noticeKey('app.runEnded'); }
     if (state.lastError && state.lastError !== app.lastError) { app.lastError = state.lastError; notice(state.lastError, true); }
@@ -578,8 +656,10 @@
     window.addEventListener('beforeunload', warnBeforeUnload);
     document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => view(button.dataset.view)));
     $('library-search').addEventListener('input', renderLibrary);
-    $('history-search').addEventListener('input', renderHistory);
-    $('history-status-filter').addEventListener('change', renderHistory);
+    $('history-search').addEventListener('input', () => refreshHistory(150));
+    $('history-status-filter').addEventListener('change', () => refreshHistory());
+    $('history-refresh').addEventListener('click', () => refreshHistory());
+    $('history-load-more').addEventListener('click', loadMoreHistory);
     for (const id of ['compare-baseline', 'compare-current']) $(id).addEventListener('change', clearComparison);
     $('compare-btn').addEventListener('click', compareRuns);
     $('compare-swap').addEventListener('click', () => { const pair = comparisonPair(); $('compare-baseline').value = pair.current; $('compare-current').value = pair.baseline; clearComparison(); });

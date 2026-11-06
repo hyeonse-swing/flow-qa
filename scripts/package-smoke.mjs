@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -156,7 +156,30 @@ try {
   assert.ok(partialComparison.comparison.warnings.includes('selection-changed'));
   assert.equal(partialComparison.comparison.counts.missing, 2);
   assert.equal(partialComparison.comparison.counts.unchanged, 1);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  // Old report search must work beyond the recent-50 state summary after install.
+  let oldestId;
+  for (let index = 0; index < 55; index++) {
+    const runId = randomUUID();
+    if (index === 0) oldestId = runId;
+    const dir = path.join(consumer, '.flowqa/ui-demo-en/.flowqa/runs', runId);
+    const at = new Date(Date.UTC(2026, 0, 1, 0, 0, index));
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'qa-report.json'), JSON.stringify({ ...failedFixture, runId, suiteId: `archived-fixture-${index}`, startedAt: at.toISOString(), finishedAt: at.toISOString() }));
+    await utimes(dir, at, at);
+  }
+  assert.equal((await (await get('/api/state')).json()).runs.some(item => item.runId === oldestId), false);
+  const archived = await (await get('/api/runs?' + new URLSearchParams({ query: oldestId.toUpperCase(), status: 'failed' }))).json();
+  assert.deepEqual(archived.runs.map(item => item.runId), [oldestId]);
+  assert.equal(archived.nextCursor, null);
+  const firstPage = await (await get('/api/runs?limit=50')).json();
+  assert.equal(firstPage.runs.length, 50);
+  assert.ok(firstPage.nextCursor);
+  const secondPage = await (await get('/api/runs?' + new URLSearchParams({ limit: '50', cursor: firstPage.nextCursor }))).json();
+  assert.ok(secondPage.runs.some(item => item.runId === oldestId));
+  const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
+  assert.equal(new Set(listedIds).size, listedIds.length);
+  assert.equal(secondPage.nextCursor, null);
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

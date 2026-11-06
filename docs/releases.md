@@ -2,6 +2,19 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.6.0: search and page through the full run history
+
+Run-history search and status filters now cover every valid saved report instead of only the latest 50. **Load more** appends up to 50 older matches, and **Refresh history** restarts the list with the same filters. Loaded counts, end-of-results, loading, and retry messages make the current scope explicit. Opening an older report supports the existing downloads and failed/error-case preparation.
+
+The read-only `/api/runs` endpoint applies search and status before pagination, reuses the safe report loader, and uses a bounded cursor tied to the normalized filters. Ordering is by run-directory modification time with a UUID tie-breaker; new records ahead of the cursor do not duplicate earlier pages. External changes to an existing directory's modification time can reorder it, so this remains a live view rather than a snapshot. `/api/state` and comparison selectors retain their most recent 50-report contract.
+
+The UI retains loaded pages through navigation and language changes, ignores late responses for previous queries, and preserves rows/cursors on a failed append. A first page updates when recent records change; multiple loaded pages stay visible with refresh guidance. Updates arriving during a pending first-page request trigger a follow-up refresh. Search and paging preserve the open report and scenario draft.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-06: 118 tests, type checking, UI syntax/design-system audit, existing demo and UI checks passed. A dedicated Chromium smoke created 72 synthetic reports to check older-record search, combined filters, page boundaries, retry, duplicate prevention, polling/query races, old-report download/preparation, English/Korean, and 390px layout. A fresh tarball installation verified full-history search and paging beyond 50 alongside the existing seven passing browser cases. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.6.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.6.0)
+- Release: [GitHub 0.6.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.6.0)
+
 ## 0.5.0: prepare failed cases from a report
 
 Adds **Prepare failed/error cases** to detailed reports. It loads the unchanged saved suite, selects only recorded `failed` and `error` cases in suite order, and opens Scenario with a fresh review requirement. Passed, flaky, blocked, and skipped cases are excluded. Preparation is read-only and never starts a run or calls a model. Unsaved drafts require confirmation; failed preparation and late responses after navigation preserve the draft.

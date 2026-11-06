@@ -29,6 +29,16 @@ const PLAN_TIMEOUT_MS = 65_000;
 const CLOSE_WAIT_MS = 10_000;
 const BROWSER_INSTALL_COMMAND = 'flow-qa browser install';
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RUN_STATUSES = new Set<QAReport['status']>(['passed', 'failed', 'blocked', 'error', 'interrupted']);
+const RUN_HISTORY_LIMIT = 50;
+const RUN_CURSOR_MAX_LENGTH = 512;
+const runCursorSchema = z.object({
+  version: z.literal(1), mtime: z.number().finite().nonnegative(), id: z.string().regex(RUN_ID),
+  filterHash: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+type RunCandidate = { id: string; mtime: number };
+type RunSummary = { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
+  caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] };
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const reportEnvelope = z.object({
   schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
@@ -69,6 +79,23 @@ class HTTPError extends Error {
 
 function invalid(message = 'Invalid input.'): never { throw new HTTPError(400, message); }
 function notFound(): never { throw new HTTPError(404, 'The requested item was not found.'); }
+function runFilterHash(query: string, status: string): string {
+  return sha256(JSON.stringify([query, status]));
+}
+// The cursor is independent of page size, so clients may change limit between pages.
+function encodeRunCursor(candidate: RunCandidate, filterHash: string): string {
+  return Buffer.from(JSON.stringify({ version: 1, mtime: candidate.mtime, id: candidate.id, filterHash })).toString('base64url');
+}
+function decodeRunCursor(value: string, filterHash: string): RunCandidate {
+  if (value.length === 0 || value.length > RUN_CURSOR_MAX_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) invalid('Invalid run cursor.');
+  try {
+    const bytes = Buffer.from(value, 'base64url');
+    if (bytes.toString('base64url') !== value) invalid('Invalid run cursor.');
+    const parsed = runCursorSchema.safeParse(JSON.parse(bytes.toString('utf8')) as unknown);
+    if (!parsed.success || parsed.data.filterHash !== filterHash) invalid('Invalid run cursor.');
+    return { id: parsed.data.id, mtime: parsed.data.mtime };
+  } catch { return invalid('Invalid run cursor.'); }
+}
 const SCHEMA_FIELDS = new Set([
   'suite', 'schemaVersion', 'id', 'title', 'source', 'file', 'sha256', 'requirements', 'cases',
   'requirementIds', 'preconditions', 'questions', 'steps', 'type', 'path', 'instruction',
@@ -330,10 +357,10 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     return { report: raw as QAReport, ...(markdown === undefined ? {} : { markdown }) };
   }
-  async function runs() {
+  async function runCandidates(): Promise<RunCandidate[]> {
     const root = await directory(['.flowqa', 'runs']);
     if (!root) return [];
-    const candidates: { id: string; mtime: number }[] = [];
+    const candidates: RunCandidate[] = [];
     for (const id of await readdir(root)) {
       if (!RUN_ID.test(id)) continue;
       try {
@@ -341,17 +368,22 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         if (info.isDirectory() && !info.isSymbolicLink()) candidates.push({ id, mtime: info.mtimeMs });
       } catch { /* incomplete run */ }
     }
-    candidates.sort((a, b) => b.mtime - a.mtime);
-    const history: { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
-      caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] }[] = [];
-    for (const candidate of candidates) {
-      if (history.length === 50) break;
+    return candidates.sort((a, b) => b.mtime - a.mtime || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+  async function runSummaries(limit: number, query = '', status = '', after?: RunCandidate): Promise<{ candidate: RunCandidate; summary: RunSummary }[]> {
+    const history: { candidate: RunCandidate; summary: RunSummary }[] = [];
+    for (const candidate of await runCandidates()) {
+      if (after && (candidate.mtime > after.mtime || (candidate.mtime === after.mtime && candidate.id <= after.id))) continue;
       try {
         const { report: item } = await report(candidate.id, false);
-        history.push({ runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
+        if (status && item.status !== status) continue;
+        if (query && ![item.suiteId, item.runId, item.target.name].some((field) => field.toLowerCase().includes(query))) continue;
+        const summary: RunSummary = { runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
           finishedAt: item.finishedAt, caseCount: item.cases.length,
           passedCount: item.cases.filter((entry) => entry.status === 'passed' || entry.status === 'flaky').length,
-          target: item.target, ...(item.selection ? { selection: item.selection } : {}) });
+          target: item.target, ...(item.selection ? { selection: item.selection } : {}) };
+        history.push({ candidate, summary });
+        if (history.length === limit) break;
       } catch { /* incomplete or unsafe run */ }
     }
     return history;
@@ -385,7 +417,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (request.method === 'GET') {
       if (url.pathname === '/api/state') {
         const settings = await config();
-        const history = await runs();
+        const history = (await runSummaries(RUN_HISTORY_LIMIT)).map(({ summary }) => summary);
         sendJSON(response, 200, { csrfToken: token,
           targets: Object.entries(settings.targets).map(([name, target]) => ({ name, ...target, targetFingerprint: targetFingerprint(target) })),
           models: { planner: modelState(settings.planner), agent: modelState(settings.agent) },
@@ -394,6 +426,27 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
           active: active?.kind === 'plan' ? { ...active, title: localizeProductMessage(active.title, locale) } : active,
           ...(history[0] ? { lastRunId: history[0].runId } : {}),
           ...(lastError ? { lastError: localizeProductMessage(lastError, locale) } : {}) });
+        return;
+      }
+      if (url.pathname === '/api/runs') {
+        for (const key of ['query', 'status', 'limit', 'cursor']) {
+          if (url.searchParams.getAll(key).length > 1) invalid();
+        }
+        const query = (url.searchParams.get('query') ?? '').trim();
+        if (query.length > 200) invalid('Run query is too long.');
+        const normalizedQuery = query.toLowerCase();
+        const status = url.searchParams.get('status') ?? '';
+        if (status && !RUN_STATUSES.has(status as QAReport['status'])) invalid('Invalid run status.');
+        const rawLimit = url.searchParams.get('limit');
+        if (rawLimit !== null && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit)) invalid('Invalid run limit.');
+        const limit = rawLimit === null ? RUN_HISTORY_LIMIT : Number(rawLimit);
+        const filterHash = runFilterHash(normalizedQuery, status);
+        const rawCursor = url.searchParams.get('cursor');
+        const after = rawCursor === null ? undefined : decodeRunCursor(rawCursor, filterHash);
+        const rows = await runSummaries(limit + 1, normalizedQuery, status, after);
+        const runs = rows.slice(0, limit);
+        sendJSON(response, 200, { runs: runs.map(({ summary }) => summary),
+          nextCursor: rows.length > limit ? encodeRunCursor(runs.at(-1)!.candidate, filterHash) : null });
         return;
       }
       if (url.pathname === '/api/suite') {

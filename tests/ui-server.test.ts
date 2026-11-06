@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -547,6 +547,142 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
     try { assert.equal((await state(restarted)).runs.length, 1); }
     finally { await restarted.close(); }
   } finally { await app.close(); }
+});
+
+test('run history searches beyond state, paginates by mtime and UUID, and skips unsafe records', async () => {
+  let actions = 0;
+  const app = await fixture({ workspace: '', run: async () => { actions++; throw new Error('Unexpected run.'); },
+    plan: async () => { actions++; throw new Error('Unexpected plan.'); } });
+  const outside = await mkdtemp(path.join(tmpdir(), 'flowqa-history-outside-'));
+  try {
+    const suite = await readSuite(path.join(app.workspace, 'cases', 'task-flow.json'));
+    const root = path.join(app.workspace, '.flowqa', 'runs');
+    const baseTime = Date.UTC(2026, 9, 1);
+    const statuses: QAReport['status'][] = ['passed', 'failed', 'blocked', 'error', 'interrupted'];
+    const records: { id: string; mtime: number; status: QAReport['status'] }[] = [];
+    const idsByIndex: string[] = [];
+    const saveRun = async (id: string, index: number, status: QAReport['status'], suiteId = suite.id, targetName = 'demo') => {
+      const runDir = path.join(root, id);
+      await mkdir(runDir);
+      const report = failureReport({ suite, runId: id, suiteHash: 'hash',
+        target: { name: targetName, url: 'https://find-me.example' },
+        startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:01:00.000Z',
+        blockedReasons: new Map() }, status, 'Search-only error');
+      report.suiteId = suiteId;
+      report.cases[0]!.title = 'Search-only title';
+      if (index === 0) { report.cases[0]!.status = 'flaky'; report.cases[1]!.status = 'passed'; }
+      await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(report));
+      const mtime = baseTime - Math.floor(index / 2) * 1000;
+      await utimes(runDir, new Date(mtime), new Date(mtime));
+      return { id, mtime: (await stat(runDir)).mtimeMs, status };
+    };
+    for (let index = 0; index < 70; index++) {
+      const id = randomUUID();
+      idsByIndex.push(id);
+      const status = index === 67 ? 'failed' : statuses[index % statuses.length]!;
+      records.push(await saveRun(id, index, status, index === 62 ? 'archive_suite' : suite.id,
+        index === 67 ? '한국 상점' : index === 68 ? 'Seoul MARKET' : 'demo'));
+    }
+    const invalidRun = randomUUID();
+    const invalidDir = path.join(root, invalidRun);
+    await mkdir(invalidDir);
+    await writeFile(path.join(invalidDir, 'qa-report.json'), '{invalid json');
+    await utimes(invalidDir, new Date(baseTime + 1000), new Date(baseTime + 1000));
+    await mkdir(path.join(root, randomUUID())); // Incomplete run.
+    const mismatched = randomUUID();
+    await mkdir(path.join(root, mismatched));
+    await writeFile(path.join(root, mismatched, 'qa-report.json'), JSON.stringify({
+      ...JSON.parse(await readFile(path.join(root, records[0]!.id, 'qa-report.json'), 'utf8')) as QAReport, runId: randomUUID(),
+    }));
+    const linkedFile = randomUUID();
+    await mkdir(path.join(root, linkedFile));
+    await writeFile(path.join(outside, 'qa-report.json'), await readFile(path.join(root, records[0]!.id, 'qa-report.json')));
+    await symlink(path.join(outside, 'qa-report.json'), path.join(root, linkedFile, 'qa-report.json'));
+    await symlink(outside, path.join(root, randomUUID()));
+    await mkdir(path.join(root, 'not-a-run-id'));
+    await writeFile(path.join(root, 'not-a-run-id', 'qa-report.json'), await readFile(path.join(root, records[0]!.id, 'qa-report.json')));
+
+    records.sort((a, b) => b.mtime - a.mtime || (a.id < b.id ? -1 : 1));
+    assert.equal(records[16]!.mtime, records[17]!.mtime, 'The first page ends inside an equal-mtime pair.');
+    const expectedIds = records.map((record) => record.id);
+    const reportBefore = await readFile(path.join(root, records[0]!.id, 'qa-report.json'));
+    const configBefore = await readFile(path.join(app.workspace, 'flowqa.config.json'));
+    const getPage = async (search = '') => {
+      const response = await fetch(`${app.server.url}/api/runs${search}`);
+      assert.equal(response.status, 200, search);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      return await response.json() as { runs: { runId: string; suiteId: string; status: QAReport['status'];
+        caseCount: number; passedCount: number; target: QAReport['target'] }[]; nextCursor: string | null };
+    };
+
+    const current = await state(app.server);
+    const defaultPage = await getPage();
+    assert.equal(current.runs.length, 50);
+    assert.deepEqual(current.runs, defaultPage.runs);
+    assert.deepEqual(defaultPage.runs.map((run) => run.runId), expectedIds.slice(0, 50));
+    assert.equal(current.lastRunId, expectedIds[0]);
+    assert.equal(defaultPage.runs.find((run) => run.runId === idsByIndex[0])?.passedCount, 2);
+    assert.ok(defaultPage.nextCursor);
+
+    const firstPage = await getPage('?limit=17');
+    assert.deepEqual(firstPage.runs.map((run) => run.runId), expectedIds.slice(0, 17));
+    const newRun = await saveRun(randomUUID(), -2, 'passed');
+    assert.equal((await state(app.server)).lastRunId, newRun.id);
+    const seen = [...firstPage.runs.map((run) => run.runId)];
+    let cursor = firstPage.nextCursor;
+    while (cursor) {
+      const page = await getPage(`?limit=19&cursor=${encodeURIComponent(cursor)}`);
+      seen.push(...page.runs.map((run) => run.runId));
+      cursor = page.nextCursor;
+    }
+    assert.deepEqual(seen, expectedIds, 'A newer inserted run cannot duplicate or skip older rows.');
+    assert.equal(new Set(seen).size, 70);
+
+    const archive = await getPage('?query=%20ARCHIVE_SUITE%20&status=blocked&limit=1');
+    assert.deepEqual(archive.runs.map((run) => run.runId), [idsByIndex[62]]);
+    assert.equal(archive.nextCursor, null);
+    const korean = await getPage(`?query=${encodeURIComponent(' 한국 ')}&status=failed`);
+    assert.deepEqual(korean.runs.map((run) => run.runId), [idsByIndex[67]]);
+    assert.deepEqual((await getPage('?query=%20market%20')).runs.map((run) => run.runId), [idsByIndex[68]]);
+    assert.deepEqual((await getPage(`?query=${idsByIndex[69]!.toUpperCase()}`)).runs.map((run) => run.runId), [idsByIndex[69]]);
+    const filteredFirst = await getPage('?query=%20DEMO%20&limit=2');
+    const filteredSecond = await getPage(`?query=demo&limit=3&cursor=${filteredFirst.nextCursor}`);
+    assert.deepEqual([...filteredFirst.runs, ...filteredSecond.runs].map((run) => run.runId),
+      [newRun, ...records].filter((record) => ![idsByIndex[67], idsByIndex[68]].includes(record.id)).slice(0, 5).map((record) => record.id));
+    for (const status of statuses) {
+      const matching = await getPage(`?status=${status}`);
+      assert.deepEqual(matching.runs.map((run) => run.runId), [newRun, ...records].filter((record) => record.status === status).map((record) => record.id));
+      assert.equal(matching.nextCursor, null);
+    }
+    for (const query of ['Search-only', 'find-me.example']) {
+      assert.deepEqual((await getPage(`?query=${query}`)).runs, [], 'Only suite ID, run ID and target name are searchable.');
+    }
+    assert.deepEqual((await getPage(`?query=${'a'.repeat(200)}`)).runs, []);
+
+    for (const [search, error] of [
+      ['?limit=0', 'Invalid run limit.'], ['?limit=51', 'Invalid run limit.'],
+      ['?limit=1.5', 'Invalid run limit.'], ['?limit=01', 'Invalid run limit.'],
+      ['?limit=', 'Invalid run limit.'], ['?status=unknown', 'Invalid run status.'],
+      ['?limit=1&limit=51', 'Invalid input.'],
+      [`?query=${'a'.repeat(201)}`, 'Run query is too long.'],
+      ['?cursor=', 'Invalid run cursor.'], ['?cursor=!!!', 'Invalid run cursor.'],
+      [`?cursor=${'a'.repeat(513)}`, 'Invalid run cursor.'],
+      [`?cursor=${Buffer.from('{"version":1}').toString('base64url')}`, 'Invalid run cursor.'],
+      [`?cursor=${firstPage.nextCursor}&query=archive_suite`, 'Invalid run cursor.'],
+      [`?cursor=${firstPage.nextCursor}&status=failed`, 'Invalid run cursor.'],
+    ]) {
+      const response = await fetch(`${app.server.url}/api/runs${search}`);
+      assert.equal(response.status, 400, search);
+      assert.equal((await response.json() as { error: string }).error, error, search);
+    }
+    assert.equal((await fetch(`${app.server.url}/api/runs`, { headers: { origin: 'https://evil.example' } })).status, 403);
+    assert.equal((await fetch(`${app.server.url}/api/runs`, { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
+    assert.equal(await statusWithHost(`${app.server.url}/api/runs`, 'evil.example'), 403);
+    assert.equal((await post(app.server, app.token, '/api/runs', {})).status, 404);
+    assert.equal(actions, 0);
+    assert.deepEqual(await readFile(path.join(root, records[0]!.id, 'qa-report.json')), reportBefore);
+    assert.deepEqual(await readFile(path.join(app.workspace, 'flowqa.config.json')), configBefore);
+  } finally { await app.close(); await rm(outside, { recursive: true, force: true }); }
 });
 
 test('selected run API validates IDs and review gates, preserves full snapshots, and exposes partial scope', async () => {

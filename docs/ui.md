@@ -66,11 +66,17 @@ From version `0.2.6`, **Case library** filters saved suites as you type in **Sea
 
 ### Filter run history
 
-From version `0.2.7`, **Run history → Run status** filters the loaded reports by passed, failed, blocked, error, or interrupted. Choose **All statuses** to restore the list. The selection stays while navigating, changing language, or receiving updated reports, and resets on page reload. The filter applies to the most recent 50 reports loaded by the UI; it does not search older history or individual case results. Filtering keeps the report already open and its downloads available.
+**Run history → Run status** filters reports by passed, failed, blocked, error, or interrupted. Choose **All statuses** to remove the status condition. From `0.6.0`, filtering searches all valid saved reports before pagination, including older records beyond the most recent 50. The selection stays while navigating, changing language, or receiving updated reports, and resets on page reload. Filtering keeps the report already open and its downloads available.
 
 ### Search run history
 
-From version `0.2.9`, **Run history → Search runs** matches part of a suite ID, run ID, or target name. Matching ignores letter case and surrounding whitespace, and supports Korean target names. Search combines with **Run status**; clear the search to return to the selected status. The query stays through navigation, language changes, and automatic report updates, and resets on page reload. Search covers the most recent 50 reports loaded by the UI, not older records, target URLs, or individual case content. Changing the query keeps the open report and its downloads available.
+**Run history → Search runs** matches part of a suite ID, run ID, or target name. Matching ignores letter case and surrounding whitespace, and supports Korean target names. Search combines with **Run status**; clear the search to return to the selected status. From `0.6.0`, search covers all valid saved reports, including older records. Target URLs and individual case content are not searched. Queries are limited to 200 characters.
+
+Results load 50 at a time, newest first by run-directory modification time, with run ID as a stable tie-breaker. **Load more** appends older matches. The displayed count describes loaded matches, not a global total. End-of-results, loading, and retry guidance distinguish an empty result from an unavailable request. A failed page request preserves loaded rows so you can retry.
+
+Changing search or status restarts at the first page. The query, status, and loaded pages stay through navigation and language changes, and reset on page reload. The open report, its downloads, and scenario draft stay intact. A delayed response from an older query cannot replace newer results. Older reports support the same report downloads and failed/error-case preparation.
+
+When recent run records change, a single loaded page refreshes automatically. If several pages are loaded, the UI keeps them and shows an update hint. **Refresh history** restarts at the first page with the current filters and also picks up external edits or deletions of older records. Pagination is a live view, not a frozen snapshot: newly added records appear when refreshed, and reports changed externally while paging may move. Invalid, incomplete, or unsafe report files are excluded. The comparison selectors still offer the latest 50 reports independently of this search.
 
 ### Prepare failed cases
 
