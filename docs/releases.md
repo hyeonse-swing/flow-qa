@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.0: explore cases and errors within a report
+
+Detailed reports now support case-content search and status filters, including **Failed/error only**. Search covers IDs, titles, reasons, expectations, attempt/secondary errors, and step labels/errors. Status choices show counts from the complete open report, while the match count describes displayed cases. Partial-run scope and report-level warnings remain visible; empty reports are distinguished from filters with no matches.
+
+Filters persist through navigation, language changes, polling, and reopening the same report. Opening a different report successfully resets them; a failed load preserves the existing view. Downloads and failed/error preparation continue to use every recorded case, and evidence URLs retain original attempt/artifact indices. No report, execution, or API schema changes are introduced. Installation examples now use this release.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-06: 118 tests, type checking, UI syntax/design-system audit, all existing UI checks, and the real Chromium demo passed. A dedicated browser smoke covered all six case statuses, case/expectation/error/step search, intersecting filters, complete Markdown/JSON exports, original evidence indices, full failed/error preparation scope, same/new/unreadable report transitions, partial and empty reports, draft/review preservation, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and exercised the installed report filter UI and complete JSON download. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.0)
+- Release: [GitHub 0.8.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.0)
+
 ## 0.7.0: compare archived runs directly from history
 
 History rows now offer **Use as baseline** and **Use as current**, so older runs found by search or paging can be compared. The chosen pair stays available through query/status changes, history refresh, polling, navigation, and language changes. Selected row actions expose their pressed state, and changing a selection or swapping roles clears the old comparison and exports until compared again.

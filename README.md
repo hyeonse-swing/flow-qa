@@ -16,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.4.0
+npm install -g @ihyeon/flow-qa@0.8.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -69,6 +69,8 @@ From `0.4.0`, choose cases under **Scenario → Review, then run → Cases to ru
 The CLI supports repeated IDs: `flow-qa run cases/task-flow.json --target demo --case TC-001 --case TC-003`. Omit `--case` to run the complete suite. Reports and comparisons label partial runs explicitly; a selected-run pass does not evaluate omitted cases. See the [UI guide](docs/ui.md#run-selected-cases).
 
 From `0.5.0`, open a detailed report and choose **Prepare failed/error cases** to load its unchanged saved suite with only `failed` and `error` cases selected. Preparation never starts a run: review the cases and target, then run explicitly. Changed or missing case/source files block preparation; a changed or missing target must be selected again. See [preparing failed cases](docs/ui.md#prepare-failed-cases).
+
+From `0.8.0`, **Detailed report** supports case/error-text search, status filters, and **Failed/error only**. Counts distinguish displayed matches from all recorded cases. Report downloads and failed/error preparation retain the full report scope. See [report case exploration](docs/ui.md#explore-cases-in-a-report).
 
 ## Compare recorded runs
 

@@ -16,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24.x(24.22.1 이상) 또는 26.12.1 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.4.0
+npm install -g @ihyeon/flow-qa@0.8.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -69,6 +69,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 CLI에서는 `flow-qa run cases/task-flow.json --target demo --case TC-001 --case TC-003`처럼 ID를 반복합니다. `--case`를 생략하면 전체를 실행합니다. 부분 실행의 통과는 선택한 케이스에만 해당하며, 보고서와 비교 화면에도 선택 범위를 표시합니다. 자세한 동작은 [UI 가이드](docs/ui.md#run-selected-cases)를 참고하세요.
 
 `0.5.0`부터 상세 보고서에서 **실패·오류 케이스 준비**를 누르면 실행 당시와 같은 저장된 케이스를 불러와 `실패`와 `실행 오류`만 선택합니다. 준비 후 케이스와 대상을 다시 검토하고 직접 실행하세요. 케이스·원본 파일이 없거나 바뀌었으면 준비를 중단하며, 실행 대상이 없거나 바뀌었으면 다시 선택해야 합니다. 자세한 동작은 [실패 케이스 준비](docs/ui.md#prepare-failed-cases)를 참고하세요.
+
+`0.8.0`부터 **상세 보고서**에서 케이스·오류 내용을 검색하고 상태별로 좁히거나 **실패·오류만** 볼 수 있습니다. 표시 건수와 보고서 전체 케이스 수를 구분하며, 다운로드와 실패·오류 재실행 준비는 보고서 전체 범위를 유지합니다. 자세한 동작은 [보고서 케이스 탐색](docs/ui.md#explore-cases-in-a-report)을 참고하세요.
 
 ## 실행 결과 비교
 

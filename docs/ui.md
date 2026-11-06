@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.4.0
+npm install -g @ihyeon/flow-qa@0.8.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -77,6 +77,16 @@ Results load 50 at a time, newest first by run-directory modification time, with
 Changing search or status restarts at the first page. The query, status, and loaded pages stay through navigation and language changes, and reset on page reload. The open report, its downloads, and scenario draft stay intact. A delayed response from an older query cannot replace newer results. Older reports support the same report downloads and failed/error-case preparation.
 
 When recent run records change, a single loaded page refreshes automatically. If several pages are loaded, the UI keeps them and shows an update hint. **Refresh history** restarts at the first page with the current filters and also picks up external edits or deletions of older records. Pagination is a live view, not a frozen snapshot: newly added records appear when refreshed, and reports changed externally while paging may move. Invalid, incomplete, or unsafe report files are excluded. Use the row actions to select any listed report for comparison, including older results.
+
+### Explore cases in a report
+
+From `0.8.0`, open **Run history → Detailed report** and use **Search cases** with **Case status** to narrow the displayed results. Search ignores case and surrounding whitespace, and matches case IDs, titles, reasons, expected results, attempt errors, secondary errors, step labels, and step errors. User-written Korean text is supported. Artifact paths and translated status labels are not search fields.
+
+**Failed/error only** shows those two recorded statuses; the other status choices distinguish passed, failed, error, blocked, flaky, and skipped. Status-option counts describe the entire open report, while the displayed count shows matches out of that report's recorded cases. A partial run's omitted cases are not included in those counts; its selected/full-suite scope remains visible separately. Report-level warnings remain visible even when no case matches. **Reset filters** clears both search and status.
+
+Filters stay while navigating, changing language, refreshing history/settings, or reopening the same report. Successfully opening another report resets them; a failed report load preserves the current report and filters. Filters reset on page reload. Evidence links still refer to each case's original attempt and artifact.
+
+These controls change only displayed cases. Markdown and JSON downloads contain every recorded case, and **Prepare failed/error cases** still prepares every recorded failed/error case from the report, even if hidden by the current filters. Filtering does not alter a saved report, the scenario draft, review confirmation, or execution selection.
 
 ### Prepare failed cases
 

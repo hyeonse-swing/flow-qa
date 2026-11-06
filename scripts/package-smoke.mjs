@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { chromium } from 'playwright';
 
 const root = process.cwd();
 const expected = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -21,6 +22,7 @@ function command(args, cwd, options = {}) {
 let child;
 let stopped;
 let report;
+let browser;
 try {
   const supplied = process.env.FLOWQA_PACKAGE_SPEC;
   let packageSpec = supplied;
@@ -131,6 +133,25 @@ try {
   await mkdir(fixtureDir, { recursive: true });
   await writeFile(path.join(fixtureDir, 'qa-report.json'), JSON.stringify(failedFixture));
   await writeFile(path.join(fixtureDir, 'qa-report.md'), '# Synthetic failed report for package verification\n');
+  // Exercise report exploration through the installed UI, preserving complete exports.
+  browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto(url);
+  await page.waitForFunction(() => document.querySelector('#connection-label').textContent.includes('connected'));
+  await page.locator('[data-view="history"]').click();
+  await page.locator(`#history-list [data-run-id="${failedFixture.runId}"] [data-action="view-report"]`).click();
+  await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), failedFixture.runId);
+  await page.locator('#report-case-status').selectOption('failed-error');
+  assert.equal(await page.locator('#report-content .case-report').count(), 1);
+  await page.locator('#report-case-search').fill('TC-003');
+  assert.equal(await page.locator('#report-content .case-report').count(), 0);
+  const fullDownload = page.waitForEvent('download');
+  await page.locator('#report-json').click();
+  const downloadedReport = JSON.parse(await readFile(await (await fullDownload).path(), 'utf8'));
+  assert.deepEqual(downloadedReport.cases, failedFixture.cases);
+  await page.locator('#report-case-reset').click();
+  assert.equal(await page.locator('#report-content .case-report').count(), 3);
+  await browser.close(); browser = null;
   const prepared = await (await get('/api/rerun?runId=' + failedFixture.runId)).json();
   assert.equal(prepared.originRunId, failedFixture.runId);
   assert.equal(prepared.file, 'task-flow.json');
@@ -186,10 +207,11 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
+  if (browser) await browser.close();
   if (child && child.exitCode === null) {
     child.kill('SIGTERM');
     const force = setTimeout(() => child.kill('SIGKILL'), 12_000);

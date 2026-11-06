@@ -105,6 +105,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .runtime-panel > p { margin: 0; overflow-wrap: anywhere; }
 #case-readiness { margin: 0 0 12px; }
 #report-content { margin-top: 20px; }
+.report-case-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 24px; }
+.report-case-filters > div { min-width: 0; }
+.report-case-filters label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
+.report-case-filters input, .report-case-filters select { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); }
+#report-case-count { margin: 12px 0 4px; }
 .blocked-title { margin-top: 21px !important; color: var(--accent-text); }
 .draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: calc(var(--space-factor) * 16px) 0; }
 .draft-actions span { color: var(--muted); font-size: 12px; }
@@ -213,6 +218,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 550px) {
+  .report-case-filters { grid-template-columns: 1fr; }
+  .report-case-filters .button { justify-self: start; }
   .page-heading h1 { font-size: clamp(36px, 10vw, 46px); }
   .page-heading > p:last-child { font-size: 14px; }
   .topline-right { display: none; }

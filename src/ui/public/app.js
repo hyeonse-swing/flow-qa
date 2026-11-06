@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: { search: '', status: 'all' }, rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -636,7 +636,7 @@
     catch (error) { showError(error); }
     finally { app.stopping = false; readiness(); }
   }
-  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = { search: '', status: 'all' }; app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
   async function prepareFailedCases() { await work(async () => {
     const runId = app.selectedRun;
     const report = app.report;
@@ -671,14 +671,48 @@
       download(`${runId}.md`, result.markdown, 'text/markdown');
     } catch (error) { if (runId === app.selectedRun && locale === i18n.locale()) showError(error); }
   }
-  function renderReport() {
-    const report = app.report; if (!report) return;
-    $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${targetDisplay(report.target)}`;
-    const host = $('report-content'); replace(host);
-    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); const scope = selectionScope(report.selection); if (scope) meta.append(el('span', 'selection-scope', scope)); host.append(meta);
-    if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
-    if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
-    for (const item of report.cases || []) {
+  const reportStatuses = ['all', 'failed-error', 'passed', 'failed', 'error', 'blocked', 'flaky', 'skipped'];
+  function reportCaseMatchesSearch(item, query) {
+    if (!query) return true;
+    const values = [item.id, item.title, item.reason, ...(item.expected || [])];
+    for (const attempt of item.attempts || []) {
+      if (attempt.error) values.push(attempt.error.code, attempt.error.message);
+      for (const error of attempt.secondaryErrors || []) values.push(error.code, error.message);
+      for (const step of attempt.steps || []) {
+        values.push(step.label);
+        if (step.error) values.push(step.error.code, step.error.message);
+      }
+    }
+    return values.some((value) => String(value ?? '').toLowerCase().includes(query));
+  }
+  function renderReportFilters() {
+    const cases = app.report?.cases || [];
+    const counts = Object.fromEntries(reportStatuses.map((status) => [status, 0]));
+    counts.all = cases.length;
+    for (const item of cases) {
+      if (Object.hasOwn(counts, item.status)) counts[item.status] += 1;
+      if (item.status === 'failed' || item.status === 'error') counts['failed-error'] += 1;
+    }
+    for (const option of $('report-case-status').options) {
+      const label = option.value === 'all' ? t('report.filterAll') : option.value === 'failed-error' ? t('report.filterFailedError') : i18n.status(option.value);
+      option.textContent = `${label} (${counts[option.value]})`;
+    }
+    if ($('report-case-search').value !== app.reportFilter.search) $('report-case-search').value = app.reportFilter.search;
+    $('report-case-status').value = app.reportFilter.status;
+    $('report-case-reset').disabled = !app.reportFilter.search && app.reportFilter.status === 'all';
+    return cases;
+  }
+  function renderReportCases() {
+    if (!app.report) return;
+    const cases = renderReportFilters();
+    const query = app.reportFilter.search.trim().toLowerCase();
+    const status = app.reportFilter.status;
+    const shown = cases.filter((item) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
+    $('report-case-count').textContent = t('report.caseCount', { shown: shown.length, total: cases.length });
+    const host = $('report-case-list'); replace(host);
+    if (!cases.length) { host.append(el('p', 'empty', t('report.empty'))); return; }
+    if (!shown.length) { host.append(el('p', 'empty', t('report.noMatches'))); return; }
+    for (const item of shown) {
       const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)}`));
       if (item.reason) section.append(el('p', '', t('app.reason', { reason: item.reason })));
       section.append(el('p', '', t('app.expected'))); const expected = el('ul', 'compact-list'); for (const check of item.expected || []) expected.append(el('li', '', check)); section.append(expected);
@@ -701,6 +735,16 @@
       }
       host.append(section);
     }
+  }
+  function renderReport() {
+    const report = app.report; if (!report) return;
+    $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${targetDisplay(report.target)}`;
+    const host = $('report-content'); replace(host);
+    const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); const scope = selectionScope(report.selection); if (scope) meta.append(el('span', 'selection-scope', scope)); host.append(meta);
+    if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
+    if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
+    const caseList = el('div'); caseList.id = 'report-case-list'; host.append(caseList);
+    renderReportCases();
   }
   async function saveModel(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const body = { role: form.dataset.role, baseURL: String(values.get('baseURL') || '').trim(), model: String(values.get('model') || '').trim() }; const apiKeyEnv = String(values.get('apiKeyEnv') || '').trim(); if (apiKeyEnv) body.apiKeyEnv = apiKeyEnv; await api('/api/models', body); await refresh(true); noticeKey('app.modelSaved'); }); }
   async function clearModel(role) { await work(async () => { await api('/api/models', { role, clear: true }); await refresh(true); noticeKey('app.modelCleared'); }); }
@@ -789,6 +833,9 @@
     $('report-md').addEventListener('click', downloadReportMarkdown);
     $('report-json').addEventListener('click', () => { if (app.report) download(`${app.selectedRun}.json`, JSON.stringify(app.report, null, 2), 'application/json'); });
     $('report-rerun').addEventListener('click', prepareFailedCases);
+    $('report-case-search').addEventListener('input', (event) => { app.reportFilter.search = event.currentTarget.value; renderReportCases(); });
+    $('report-case-status').addEventListener('change', (event) => { app.reportFilter.status = event.currentTarget.value; renderReportCases(); });
+    $('report-case-reset').addEventListener('click', () => { app.reportFilter = { search: '', status: 'all' }; renderReportCases(); });
     $('target-form').addEventListener('submit', saveTarget);
     $('target-kind').addEventListener('change', targetFields); targetFields();
     $('language-select').addEventListener('change', (event) => i18n.setLocale(event.currentTarget.value));
