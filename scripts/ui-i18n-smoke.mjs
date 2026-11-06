@@ -353,7 +353,7 @@ try {
   assert.equal(await hasBeforeUnloadWarning(), false, 'Filtering reports does not modify the saved scenario.');
   assert.equal(await page.locator('#review-checkbox').isChecked(), true, 'Filtering preserves the scenario review state.');
   await page.locator('#language-select').selectOption('ko');
-  await page.locator('#history-list button').first().click();
+  await page.locator('#history-list [data-action="view-report"]').first().click();
   await page.locator('#report-content .case-report').first().waitFor();
   await page.screenshot({ path: path.join(artifacts, 'report-ko.png'), fullPage: true });
   const downloadReport = async () => {

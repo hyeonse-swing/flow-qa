@@ -370,6 +370,12 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     return candidates.sort((a, b) => b.mtime - a.mtime || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
+  function runSummary(item: QAReport): RunSummary {
+    return { runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
+      finishedAt: item.finishedAt, caseCount: item.cases.length,
+      passedCount: item.cases.filter((entry) => entry.status === 'passed' || entry.status === 'flaky').length,
+      target: item.target, ...(item.selection ? { selection: item.selection } : {}) };
+  }
   async function runSummaries(limit: number, query = '', status = '', after?: RunCandidate): Promise<{ candidate: RunCandidate; summary: RunSummary }[]> {
     const history: { candidate: RunCandidate; summary: RunSummary }[] = [];
     for (const candidate of await runCandidates()) {
@@ -378,11 +384,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         const { report: item } = await report(candidate.id, false);
         if (status && item.status !== status) continue;
         if (query && ![item.suiteId, item.runId, item.target.name].some((field) => field.toLowerCase().includes(query))) continue;
-        const summary: RunSummary = { runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
-          finishedAt: item.finishedAt, caseCount: item.cases.length,
-          passedCount: item.cases.filter((entry) => entry.status === 'passed' || entry.status === 'flaky').length,
-          target: item.target, ...(item.selection ? { selection: item.selection } : {}) };
-        history.push({ candidate, summary });
+        history.push({ candidate, summary: runSummary(item) });
         if (history.length === limit) break;
       } catch { /* incomplete or unsafe run */ }
     }
@@ -448,6 +450,18 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         sendJSON(response, 200, { runs: runs.map(({ summary }) => summary),
           nextCursor: rows.length > limit ? encodeRunCursor(runs.at(-1)!.candidate, filterHash) : null });
         return;
+      }
+      if (url.pathname === '/api/run-summary') {
+        if (url.searchParams.getAll('runId').length !== 1) invalid('A run ID is required.');
+        const runId = url.searchParams.get('runId')!;
+        if (!RUN_ID.test(runId)) invalid('Invalid run ID.');
+        let item: QAReport;
+        try { ({ report: item } = await report(runId, false)); }
+        catch (error) {
+          if (error instanceof HTTPError && error.status === 400) notFound();
+          throw error;
+        }
+        sendJSON(response, 200, { run: runSummary(item) }); return;
       }
       if (url.pathname === '/api/suite') {
         const file = url.searchParams.get('file');

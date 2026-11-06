@@ -4,7 +4,7 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -38,8 +38,10 @@
     try { result = await response.json(); } catch { throw localizedError('app.responseUnreadable', { status: response.status }); }
     if (!response.ok) {
       const issues = Array.isArray(result?.issues) ? result.issues.slice(0, 8).map((issue) => `${issue.path}: ${issue.message}`).join('\n') : '';
-      if (!result?.error && !issues) throw localizedError('app.requestFailed', { status: response.status });
-      throw new Error(`${result?.error || t('app.requestFailed', { status: response.status })}${issues ? `\n${issues}` : ''}`);
+      const error = !result?.error && !issues ? localizedError('app.requestFailed', { status: response.status })
+        : new Error(`${result?.error || t('app.requestFailed', { status: response.status })}${issues ? `\n${issues}` : ''}`);
+      error.status = response.status;
+      throw error;
     }
     return result;
   }
@@ -282,10 +284,20 @@
           : app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty';
       host.append(el('p', 'empty', t(key)));
     }
+    const pair = comparisonPair();
     for (const run of history.runs) {
-      const row = el('div', 'list-row'); const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
+      const row = el('div', 'list-row history-run-row'); row.dataset.runId = run.runId;
+      const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
       const scope = selectionScope(run.selection); if (scope) copy.append(el('small', 'selection-scope', scope));
-      const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); row.append(copy, button); host.append(row);
+      const actions = el('div', 'run-row-actions');
+      const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.dataset.action = 'view-report'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); actions.append(button);
+      for (const [role, label] of [['baseline', 'comparison.useBaseline'], ['current', 'comparison.useCurrent']]) {
+        const select = el('button', 'button quiet', t(label)); select.type = 'button'; select.dataset.action = role === 'baseline' ? 'compare-baseline' : 'compare-current';
+        select.setAttribute('aria-pressed', String(pair[role] === run.runId));
+        select.disabled = run.status === 'running' || run.status === 'stopping';
+        select.addEventListener('click', () => selectComparisonRun(role, run)); actions.append(select);
+      }
+      row.append(copy, actions); host.append(row);
     }
     const messages = [];
     if (history.loaded) messages.push(t('history.pageCount', { count: history.runs.length }));
@@ -320,6 +332,7 @@
       history.loaded = true;
       history.error = null;
       if (!append) history.updatesAvailable = false;
+      renderComparisonOptions();
     } catch {
       if (request !== history.request) return;
       history.error = append ? 'more' : 'first';
@@ -341,7 +354,7 @@
     const request = ++history.request;
     history.runs = []; history.nextCursor = null; history.pagesLoaded = 0; history.loaded = false;
     history.loading = true; history.kind = 'first'; history.error = null; history.updatesAvailable = false; history.pendingRecentUpdate = false;
-    renderHistory();
+    renderHistory(); renderComparisonOptions();
     const filters = historyFilters();
     if (delay) history.debounce = setTimeout(() => { history.debounce = null; void fetchHistoryPage(request, filters); }, delay);
     else void fetchHistoryPage(request, filters);
@@ -367,7 +380,18 @@
   const comparisonCategoryKeys = { 'newly-failed': 'comparison.newlyFailed', 'now-passed': 'comparison.nowPassed', changed: 'comparison.changed', unchanged: 'comparison.unchanged', added: 'comparison.added', missing: 'comparison.missing' };
   const comparisonWarningKeys = { 'suite-changed': 'comparison.warningSuite', 'reverse-order': 'comparison.warningReverse', 'incomplete-run': 'comparison.warningIncomplete', 'mobile-identity-unverified': 'comparison.warningMobileIdentity', 'partial-run': 'comparison.warningPartial', 'selection-changed': 'comparison.warningSelectionChanged' };
   function comparisonPair() { return { baseline: $('compare-baseline').value, current: $('compare-current').value }; }
-  function comparisonValid() { const { baseline, current } = comparisonPair(); return !!baseline && !!current && baseline !== current; }
+  function comparisonRun(runId) {
+    return (app.state?.runs || []).find((run) => run.runId === runId)
+      || app.history.runs.find((run) => run.runId === runId)
+      || Object.values(app.comparisonPins).find((run) => run?.runId === runId);
+  }
+  function comparisonValid() {
+    const { baseline, current } = comparisonPair();
+    return !!baseline && !!current && baseline !== current && [baseline, current].every((id) => {
+      const run = comparisonRun(id);
+      return run && run.status !== 'running' && run.status !== 'stopping';
+    });
+  }
   function comparisonStatus(key, params = {}, error = false) {
     app.comparisonStatus = key; app.comparisonStatusParams = params;
     const node = $('comparison-status'); node.textContent = t(key, params); node.classList.toggle('report-errors', error);
@@ -385,22 +409,77 @@
     $('comparison-summary').replaceChildren(); $('comparison-warnings').replaceChildren(); $('comparison-content').replaceChildren();
     comparisonStatus('comparison.selectBoth'); comparisonControls();
   }
+  function selectComparisonRun(role, run) {
+    if (run && (run.status === 'running' || run.status === 'stopping')) return;
+    const select = $(role === 'baseline' ? 'compare-baseline' : 'compare-current');
+    const runId = run?.runId || '';
+    if (select.value === runId && (app.comparisonPins[role]?.runId || '') === runId) return;
+    app.comparisonPins[role] = run || null;
+    app.comparisonSelectionGeneration += 1;
+    renderComparisonOptions();
+    select.value = runId;
+    clearComparison(); renderHistory();
+  }
   function renderComparisonOptions() {
-    const runs = (app.state?.runs || []).slice(0, 50);
-    let missing = false;
+    const runs = new Map();
+    for (const run of [...(app.state?.runs || []).slice(0, 50), ...app.history.runs, ...Object.values(app.comparisonPins)]) {
+      if (run?.runId && !runs.has(run.runId)) runs.set(run.runId, run);
+    }
     for (const id of ['compare-baseline', 'compare-current']) {
       const select = $(id); const selected = select.value;
       select.replaceChildren(el('option', '', t('comparison.choose'))); select.firstChild.value = '';
-      for (const run of runs) {
+      for (const run of runs.values()) {
         const option = el('option', '', `${t('comparison.runLabel', { id: run.runId, shortId: run.runId.slice(-8), date: formatDate(run.startedAt), suite: run.suiteId, target: targetDisplay(run.target), status: i18n.status(run.status) })}${selectionScope(run.selection) ? ` · ${selectionScope(run.selection)}` : ''}`);
-        option.value = run.runId; select.append(option);
+        option.value = run.runId; option.disabled = run.status === 'running' || run.status === 'stopping'; select.append(option);
       }
-      select.value = runs.some((run) => run.runId === selected) ? selected : '';
-      if (selected && !select.value) missing = true;
+      select.value = runs.has(selected) ? selected : '';
     }
-    if (missing) clearComparison();
-    if (!runs.length && !app.comparison) comparisonStatus('comparison.noRuns');
+    if (!runs.size && !app.comparison) comparisonStatus('comparison.noRuns');
     comparisonControls();
+  }
+  async function validateComparisonSelection(state) {
+    if (app.comparisonValidation) return app.comparisonValidation;
+    const pair = comparisonPair();
+    const generation = app.comparisonSelectionGeneration;
+    const recent = new Set((state.runs || []).map((run) => run.runId));
+    const ids = [...new Set(Object.values(pair).filter((id) => id && !recent.has(id)))];
+    if (!ids.length) return;
+    const validation = Promise.all(ids.map(async (runId) => {
+      try {
+        const result = await api(`/api/run-summary?runId=${encodeURIComponent(runId)}`);
+        if (result?.run?.runId !== runId) throw new Error('Invalid run summary response.');
+        return { runId, run: result.run };
+      } catch (error) { return { runId, error }; }
+    }));
+    app.comparisonValidation = validation;
+    try {
+      const outcomes = await validation;
+      const selected = comparisonPair();
+      if (generation !== app.comparisonSelectionGeneration || selected.baseline !== pair.baseline || selected.current !== pair.current) return;
+      let missing = false;
+      let updated = false;
+      for (const outcome of outcomes) {
+        if (outcome.error?.status === 404) {
+          for (const role of ['baseline', 'current']) {
+            if (selected[role] === outcome.runId) {
+              $(role === 'baseline' ? 'compare-baseline' : 'compare-current').value = '';
+              app.comparisonPins[role] = null;
+              missing = true;
+            }
+          }
+          app.history.runs = app.history.runs.filter((run) => run.runId !== outcome.runId);
+        } else if (outcome.run) {
+          for (const role of ['baseline', 'current']) if (selected[role] === outcome.runId) app.comparisonPins[role] = outcome.run;
+          updated = true;
+        }
+      }
+      if (missing) {
+        app.comparisonSelectionGeneration += 1;
+        clearComparison();
+        if (app.history.loading) refreshHistory(); else renderHistory();
+      }
+      if (missing || updated) renderComparisonOptions();
+    } finally { if (app.comparisonValidation === validation) app.comparisonValidation = null; }
   }
   async function compareRuns() {
     if (!comparisonValid()) return;
@@ -478,6 +557,7 @@
     if (full || initialize) { targetOptions(); modelForms(); }
     if (previousActive?.kind === 'run' && !state.active) { if (state.lastError) notice(state.lastError, true); else noticeKey('app.runEnded'); }
     if (state.lastError && state.lastError !== app.lastError) { app.lastError = state.lastError; notice(state.lastError, true); }
+    await validateComparisonSelection(state);
   }
   async function work(fn) { if (app.busy) return; app.busy = true; readiness(); notice(''); try { await fn(); } catch (error) { showError(error); } finally { app.busy = false; readiness(); } }
   async function loadSuite(file) { await work(async () => { const result = await api(`/api/suite?file=${encodeURIComponent(file)}`); if (!confirmScenarioReplacement('app.confirmReplaceDraft')) return; $('flow-input').value = result.flow || ''; setDraft(result.suite, result.script, 'library', result.flow || '', file, result.suiteHash || ''); noticeKey('app.suiteLoaded'); view('scenario'); }); }
@@ -660,9 +740,19 @@
     $('history-status-filter').addEventListener('change', () => refreshHistory());
     $('history-refresh').addEventListener('click', () => refreshHistory());
     $('history-load-more').addEventListener('click', loadMoreHistory);
-    for (const id of ['compare-baseline', 'compare-current']) $(id).addEventListener('change', clearComparison);
+    for (const [id, role] of [['compare-baseline', 'baseline'], ['compare-current', 'current']]) $(id).addEventListener('change', () => {
+      const run = comparisonRun($(id).value);
+      selectComparisonRun(role, run || null);
+    });
     $('compare-btn').addEventListener('click', compareRuns);
-    $('compare-swap').addEventListener('click', () => { const pair = comparisonPair(); $('compare-baseline').value = pair.current; $('compare-current').value = pair.baseline; clearComparison(); });
+    $('compare-swap').addEventListener('click', () => {
+      const pair = comparisonPair();
+      app.comparisonPins = { baseline: comparisonRun(pair.current), current: comparisonRun(pair.baseline) };
+      app.comparisonSelectionGeneration += 1;
+      renderComparisonOptions();
+      $('compare-baseline').value = pair.current; $('compare-current').value = pair.baseline;
+      clearComparison(); renderHistory();
+    });
     $('comparison-filter').addEventListener('change', renderComparison);
     $('comparison-md').addEventListener('click', downloadComparisonMarkdown);
     $('comparison-json').addEventListener('click', () => { if (app.comparison && comparisonValid()) { const { baseline, current } = comparisonPair(); download(`${baseline}-to-${current}.json`, JSON.stringify(app.comparison, null, 2), 'application/json'); } });

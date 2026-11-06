@@ -157,20 +157,27 @@ try {
   assert.equal(partialComparison.comparison.counts.missing, 2);
   assert.equal(partialComparison.comparison.counts.unchanged, 1);
   // Old report search must work beyond the recent-50 state summary after install.
-  let oldestId;
+  let oldestId; let olderCurrentId;
   for (let index = 0; index < 55; index++) {
     const runId = randomUUID();
     if (index === 0) oldestId = runId;
+    if (index === 1) olderCurrentId = runId;
     const dir = path.join(consumer, '.flowqa/ui-demo-en/.flowqa/runs', runId);
     const at = new Date(Date.UTC(2026, 0, 1, 0, 0, index));
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, 'qa-report.json'), JSON.stringify({ ...failedFixture, runId, suiteId: `archived-fixture-${index}`, startedAt: at.toISOString(), finishedAt: at.toISOString() }));
+    await writeFile(path.join(dir, 'qa-report.json'), JSON.stringify({ ...failedFixture, runId, suiteId: index < 2 ? 'archived-comparison' : `archived-fixture-${index}`, startedAt: at.toISOString(), finishedAt: at.toISOString() }));
     await utimes(dir, at, at);
   }
   assert.equal((await (await get('/api/state')).json()).runs.some(item => item.runId === oldestId), false);
   const archived = await (await get('/api/runs?' + new URLSearchParams({ query: oldestId.toUpperCase(), status: 'failed' }))).json();
   assert.deepEqual(archived.runs.map(item => item.runId), [oldestId]);
   assert.equal(archived.nextCursor, null);
+  const archivedSummary = await (await get('/api/run-summary?runId=' + oldestId)).json();
+  assert.equal(archivedSummary.run.runId, oldestId);
+  const archivedComparison = await (await get('/api/comparison?' + new URLSearchParams({ baseline: oldestId, current: olderCurrentId }))).json();
+  assert.equal(archivedComparison.comparison.baseline.runId, oldestId);
+  assert.equal(archivedComparison.comparison.current.runId, olderCurrentId);
+  assert.match(archivedComparison.markdown, new RegExp(oldestId));
   const firstPage = await (await get('/api/runs?limit=50')).json();
   assert.equal(firstPage.runs.length, 50);
   assert.ok(firstPage.nextCursor);
@@ -179,7 +186,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

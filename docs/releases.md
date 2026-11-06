@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.7.0: compare archived runs directly from history
+
+History rows now offer **Use as baseline** and **Use as current**, so older runs found by search or paging can be compared. The chosen pair stays available through query/status changes, history refresh, polling, navigation, and language changes. Selected row actions expose their pressed state, and changing a selection or swapping roles clears the old comparison and exports until compared again.
+
+A read-only summary lookup validates selected runs outside the recent 50 using the existing safe JSON report loader; comparison does not require a saved Markdown file. A confirmed deleted, invalid, or unsafe report clears its selection and comparison. Temporary request failures preserve the pair, and stale validation responses cannot change a newer selection. Choosing reports preserves the scenario draft, review state, and open detailed report, and never starts QA execution.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-06: 118 tests, type checking, UI syntax/design-system audit, all existing UI checks, and the real Chromium demo passed. A dedicated browser smoke used 61 synthetic records to verify comparison beyond the latest 50, JSON-only reports, row selection, filtering/paging, polling, navigation/language preservation, swaps, temporary failures, stale missing-file responses after changing away and back to the same selection, deleted archived files, and a 390px layout. A fresh tarball installation ran seven passing browser cases and verified archived summary lookup and comparison. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.7.0`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.7.0)
+- Release: [GitHub 0.7.0](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.7.0)
+
 ## 0.6.0: search and page through the full run history
 
 Run-history search and status filters now cover every valid saved report instead of only the latest 50. **Load more** appends up to 50 older matches, and **Refresh history** restarts the list with the same filters. Loaded counts, end-of-results, loading, and retry messages make the current scope explicit. Opening an older report supports the existing downloads and failed/error-case preparation.

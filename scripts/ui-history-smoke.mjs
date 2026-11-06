@@ -111,7 +111,7 @@ try {
   release(); await late; await idle();
   assert.ok((await rows().textContent()).includes(oldest.runId));
   await page.unroute('**/api/runs?*', slowQuery);
-  await rows().getByRole('button').click();
+  await rows().locator('[data-action="view-report"]').click();
   await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), oldest.runId);
   const downloaded = page.waitForEvent('download'); await page.locator('#report-json').click();
   assert.equal(JSON.parse(await readFile(await (await downloaded).path(), 'utf8')).runId, oldest.runId);

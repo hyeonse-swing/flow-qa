@@ -58,7 +58,7 @@ try {
   const selected = () => page.locator('#case-selection-list input:checked').evaluateAll(inputs => inputs.map(input => input.dataset.caseId));
   const openReport = async (runId = report.runId) => {
     await page.locator('[data-view="history"]').click();
-    await page.locator('#history-list .list-row').filter({ hasText: runId }).getByRole('button').click();
+    await page.locator('#history-list .list-row').filter({ hasText: runId }).locator('[data-action="view-report"]').click();
     await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), runId);
   };
   const prepare = async () => {

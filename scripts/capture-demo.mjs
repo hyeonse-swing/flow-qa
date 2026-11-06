@@ -57,7 +57,7 @@ try {
   await page.locator('#run-btn').click();
   await page.locator('[data-view="history"]').click();
   await page.locator('#history-list .list-row strong').first().filter({ hasText: /passed/i }).waitFor({ timeout: 60_000 });
-  await page.locator('#history-list button').first().click();
+  await page.locator('#history-list [data-action="view-report"]').first().click();
   await page.locator('#report-panel').waitFor({ state: 'visible' });
   const headings = await page.locator('#report-content .case-report h3').allTextContents();
   assert.equal(headings.length, 3, `Expected three report cases: ${headings.join(' | ')}`);

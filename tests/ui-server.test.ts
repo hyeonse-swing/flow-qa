@@ -588,7 +588,8 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     await mkdir(invalidDir);
     await writeFile(path.join(invalidDir, 'qa-report.json'), '{invalid json');
     await utimes(invalidDir, new Date(baseTime + 1000), new Date(baseTime + 1000));
-    await mkdir(path.join(root, randomUUID())); // Incomplete run.
+    const incomplete = randomUUID();
+    await mkdir(path.join(root, incomplete)); // Incomplete run.
     const mismatched = randomUUID();
     await mkdir(path.join(root, mismatched));
     await writeFile(path.join(root, mismatched, 'qa-report.json'), JSON.stringify({
@@ -598,7 +599,8 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     await mkdir(path.join(root, linkedFile));
     await writeFile(path.join(outside, 'qa-report.json'), await readFile(path.join(root, records[0]!.id, 'qa-report.json')));
     await symlink(path.join(outside, 'qa-report.json'), path.join(root, linkedFile, 'qa-report.json'));
-    await symlink(outside, path.join(root, randomUUID()));
+    const linkedDirectory = randomUUID();
+    await symlink(outside, path.join(root, linkedDirectory));
     await mkdir(path.join(root, 'not-a-run-id'));
     await writeFile(path.join(root, 'not-a-run-id', 'qa-report.json'), await readFile(path.join(root, records[0]!.id, 'qa-report.json')));
 
@@ -679,6 +681,21 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     assert.equal((await fetch(`${app.server.url}/api/runs`, { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
     assert.equal(await statusWithHost(`${app.server.url}/api/runs`, 'evil.example'), 403);
     assert.equal((await post(app.server, app.token, '/api/runs', {})).status, 404);
+    const oldRunId = idsByIndex[62]!;
+    assert.equal(current.runs.some((run) => run.runId === oldRunId), false);
+    const oldSummaryResponse = await fetch(`${app.server.url}/api/run-summary?runId=${oldRunId}`);
+    assert.equal(oldSummaryResponse.status, 200);
+    assert.equal(oldSummaryResponse.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await oldSummaryResponse.json(), { run: archive.runs[0] });
+    for (const runId of [invalidRun, incomplete, mismatched, linkedFile, linkedDirectory, randomUUID()]) {
+      assert.equal((await fetch(`${app.server.url}/api/run-summary?runId=${runId}`)).status, 404, runId);
+    }
+    for (const search of ['', '?runId=', `?runId=${oldRunId}&runId=${oldRunId}`, '?runId=..%2Fother']) {
+      assert.equal((await fetch(`${app.server.url}/api/run-summary${search}`)).status, 400, search);
+    }
+    assert.equal((await fetch(`${app.server.url}/api/run-summary?runId=${oldRunId}`, { headers: { origin: 'https://evil.example' } })).status, 403);
+    await rm(path.join(root, oldRunId), { recursive: true });
+    assert.equal((await fetch(`${app.server.url}/api/run-summary?runId=${oldRunId}`)).status, 404);
     assert.equal(actions, 0);
     assert.deepEqual(await readFile(path.join(root, records[0]!.id, 'qa-report.json')), reportBefore);
     assert.deepEqual(await readFile(path.join(app.workspace, 'flowqa.config.json')), configBefore);
@@ -736,6 +753,9 @@ test('selected run API validates IDs and review gates, preserves full snapshots,
     assert.deepEqual(payload.report.cases.map((item: {id:string}) => item.id), [ids[0], ids[2]]);
     assert.match(payload.markdown, /2.*3/);
     assert.deepEqual((final.runs[0] as unknown as {selection:unknown}).selection, payload.report.selection);
+    const summaryResponse = await fetch(`${app.server.url}/api/run-summary?runId=${runId}`);
+    assert.equal(summaryResponse.status, 200);
+    assert.deepEqual((await summaryResponse.json() as { run: { selection: unknown } }).run.selection, payload.report.selection);
     const reportFile = path.join(app.workspace, '.flowqa/runs', runId, 'qa-report.json');
     await writeFile(reportFile, JSON.stringify({ ...payload.report, selection: { caseIds: [ids[0]], totalCases: 3 } }));
     assert.equal((await fetch(`${app.server.url}/api/report?runId=${runId}`)).status, 404, 'Incoherent scope must not be shown as a valid run.');

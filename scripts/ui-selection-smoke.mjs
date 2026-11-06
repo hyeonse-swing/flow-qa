@@ -97,7 +97,7 @@ try {
   await page.locator('[data-view="history"]').click();
   await page.waitForFunction(id => document.querySelector('#history-list').textContent.includes(id), report.runId);
   assert.match(await page.locator('#history-list').textContent(), /2.*5|5.*2/);
-  await page.locator('#history-list .list-row').filter({ hasText: report.runId }).getByRole('button').click();
+  await page.locator('#history-list .list-row').filter({ hasText: report.runId }).locator('[data-action="view-report"]').click();
   await page.locator('#report-content .case-report').first().waitFor();
   assert.equal(await page.locator('#report-content .case-report').count(), 2);
   assert.match(await page.locator('#report-content').textContent(), /2.*5|5.*2/);

@@ -72,7 +72,7 @@ From `0.5.0`, open a detailed report and choose **Prepare failed/error cases** t
 
 ## Compare recorded runs
 
-From `0.6.0`, **Run history** searches all valid saved reports by suite ID, run ID, or target name, combined with the run-status filter. Results load 50 at a time; use **Load more** for older results and **Refresh history** to update the list while keeping your filters. Older reports support the same downloads and failed-case preparation. See [history search and paging](docs/ui.md#search-run-history).
+From `0.6.0`, **Run history** searches all valid saved reports by suite ID, run ID, or target name, combined with the run-status filter. Results load 50 at a time; use **Load more** for older results and **Refresh history** to update the list while keeping your filters. Older reports support the same downloads and failed-case preparation. From `0.7.0`, choose **Use as baseline** and **Use as current** on any history rows to compare older runs, retaining the pair through searches and refreshes. See [history search and paging](docs/ui.md#search-run-history).
 
 In **Run history → Compare two runs**, select two reports from the same suite and target to see passed-to-failed, failed-to-passed, other status changes, unchanged, added, and missing cases. Filter the comparison or download all results as Markdown/JSON. Changed test definitions and incomplete runs carry explicit warnings; observed status changes do not prove a product defect was introduced or fixed. See the [UI guide](docs/ui.md#compare-two-runs).
 
