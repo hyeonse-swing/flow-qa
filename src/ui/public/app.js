@@ -702,7 +702,14 @@
       const label = option.value === 'all' ? t('report.filterAll') : option.value === 'failed-error' ? t('report.filterFailedError') : i18n.status(option.value);
       option.textContent = `${label} (${counts[option.value]})`;
     }
-    for (const option of $('report-case-sort').options) option.textContent = t(option.value === 'duration-desc' ? 'report.sortDurationDescending' : 'report.sortRecorded');
+    for (const option of $('report-case-sort').options) {
+      const labelKey = {
+        recorded: 'report.sortRecorded',
+        'duration-desc': 'report.sortDurationDescending',
+        'attempts-desc': 'report.sortAttemptsDescending'
+      }[option.value];
+      option.textContent = t(labelKey);
+    }
     if ($('report-case-search').value !== app.reportFilter.search) $('report-case-search').value = app.reportFilter.search;
     $('report-case-status').value = app.reportFilter.status;
     $('report-case-sort').value = app.reportFilter.sort;
@@ -722,6 +729,7 @@
       if (rightDuration === null) return -1;
       return rightDuration - leftDuration || left.index - right.index;
     });
+    else if (app.reportFilter.sort === 'attempts-desc') shown.sort((left, right) => (right.item.attempts || []).length - (left.item.attempts || []).length || left.index - right.index);
     const displayed = shown.map(({ item }) => item);
     $('report-case-count').textContent = t('report.caseCount', { shown: displayed.length, total: cases.length });
     const host = $('report-case-list'); replace(host);

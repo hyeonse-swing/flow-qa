@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.3
+npm install -g @ihyeon/flow-qa@0.8.4
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -83,6 +83,8 @@ When recent run records change, a single loaded page refreshes automatically. If
 From `0.8.1`, each case heading also shows the number of attempts recorded in that report. Zero attempts is shown explicitly. This count does not infer a retry policy or change the recorded case status. From `0.8.2`, **Total attempt time** sums the recorded attempt durations in milliseconds. It is not the overall elapsed run time. The total is shown only when at least one attempt exists and every duration is a finite, nonnegative number; incomplete/invalid timing is omitted, while a recorded total of zero is shown.
 
 From `0.8.3`, **Case order → Longest attempt time first** sorts visible cases by their total recorded attempt time. Equal totals keep their recorded order. Missing, incomplete, invalid, or overflowing totals appear after valid totals, including zero. **Recorded order** restores the original report order.
+
+From `0.8.4`, **Case order → Most attempts first** brings cases with more recorded attempts to the top. Equal counts retain recorded order; cases with zero attempts follow attempted cases. This uses the saved attempt list only and does not infer a retry policy, change case status, or depend on duration availability.
 
 From `0.8.0`, open **Run history → Detailed report** and use **Search cases** with **Case status** to narrow the displayed results. Search ignores case and surrounding whitespace, and matches case IDs, titles, reasons, expected results, attempt errors, secondary errors, step labels, and step errors. User-written Korean text is supported. Artifact paths and translated status labels are not search fields.
 

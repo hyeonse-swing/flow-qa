@@ -149,6 +149,7 @@
     'report.sortLabel': ['Case order', '케이스 정렬'],
     'report.sortRecorded': ['Recorded order', '기록 순서'],
     'report.sortDurationDescending': ['Longest attempt time first', '시도 시간이 긴 순'],
+    'report.sortAttemptsDescending': ['Most attempts first', '시도가 많은 순'],
     'report.filterAll': ['All statuses', '전체 상태'],
     'report.filterFailedError': ['Failed/error only', '실패·오류만'],
     'report.reset': ['Reset filters', '필터 초기화'],

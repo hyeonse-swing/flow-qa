@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.4: find cases with repeated attempts
+
+Detailed reports now offer **Case order → Most attempts first**. Cases sort by the number of saved attempts, keeping equal counts in their original order and placing zero-attempt cases last. Timing availability does not affect this order, and the view does not infer retries or change recorded outcomes. English and Korean labels are available.
+
+The option works with the existing search/status filters and preserves the same report-navigation and reset behavior. Downloads keep the complete original report, evidence links retain their indices, and failed/error preparation keeps its full scope.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-09 (Asia/Seoul): 118 tests, type checking, UI syntax/design-system audit, the report-explorer browser smoke, and package checks passed. Browser fixtures covered attempt-count ordering, stable ties, zero attempts, invalid timing independence, search/status combinations, full exports, original evidence indices, rerun scope, persistence/reset behavior, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and verified attempt ordering and reset in the installed UI. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.4`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.4)
+- Release: [GitHub 0.8.4](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.4)
+
 ## 0.8.3: find slow cases by recorded attempt time
 
 Detailed reports now offer **Case order → Longest attempt time first**. The view sorts by the sum of valid recorded attempt durations, keeps equal totals in their original order, and places unknown or invalid totals after all valid totals, including zero. **Recorded order** restores the original order; **Reset filters** also resets sorting. English and Korean labels are available.

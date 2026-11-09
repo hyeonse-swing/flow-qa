@@ -107,6 +107,15 @@ try {
   await sort('duration-desc');
   assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
   assert.equal(await page.locator('#report-case-reset').isEnabled(), true, 'Sorting alone enables reset.');
+  await sort('attempts-desc');
+  assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
+  assert.equal(await page.locator('#report-case-sort option:checked').textContent(), 'Most attempts first');
+  await page.locator('#language-select').selectOption('ko');
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'attempts-desc');
+  assert.equal(await page.locator('#report-case-sort option:checked').textContent(), '시도가 많은 순');
+  await page.locator('#language-select').selectOption('en');
+  await open();
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'attempts-desc', 'Reopening the same report preserves attempt ordering.');
   for (const [index, value] of statuses.entries()) {
     await status(value);
     assert.equal(await cases().count(), 1, value);
@@ -190,7 +199,7 @@ try {
   await sort('duration-desc');
   assert.equal(await cases().count(), 0);
   assert.match(await page.locator('#report-content').textContent(), /기록된.*없|케이스.*없/);
-  await open(); await status('passed'); await sort('duration-desc');
+  await open(); await status('passed'); await sort('attempts-desc');
   const preparing = page.waitForResponse(response => response.url().includes('/api/rerun?'));
   await page.locator('#report-rerun').click();
   assert.equal((await preparing).status(), 200);
@@ -200,6 +209,7 @@ try {
   assert.equal(runRequests, 0, 'Exploration and preparation never start a run.');
   await page.locator('[data-view="history"]').click(); await reset();
   await page.locator('#language-select').selectOption('en'); await status('failed-error');
+  await sort('attempts-desc');
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-explorer-en.png') });
   await open(durationEdges.runId);
   assert.equal(await cases().count(), durationEdgeAttempts.length);
@@ -208,12 +218,26 @@ try {
   await sort('duration-desc');
   assert.deepEqual(await caseIds(), [7, 8, 9, 1, 10, 0, 2, 3, 4, 5, 6].map(index => `DURATION-${index}`), 'Valid totals sort descending, ties retain recorded order, and unknown totals follow valid zero.');
   assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Sorting never mutates the exported report.');
+  await sort('attempts-desc');
+  assert.deepEqual(await caseIds(), [2, 6, 1, 3, 4, 5, 7, 8, 9, 10, 0].map(index => `DURATION-${index}`), 'Attempt ordering uses only recorded counts, preserves ties, and does not depend on valid timing.');
+  assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Attempt sorting keeps all recorded statuses and original export order.');
+  await page.locator('#language-select').selectOption('ko');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.locator('.report-case-filters').screenshot({ path: path.join(artifacts, 'attempt-sort-ko-mobile.png') });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await reset();
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
+  assert.deepEqual(await caseIds(), durationEdges.cases.map(item => item.id));
+  await sort('attempts-desc'); await open(partial.runId);
+  assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded', 'Another report clears attempt ordering.');
+  await open(durationEdges.runId);
   await sort('recorded');
   assert.deepEqual(await caseIds(), durationEdges.cases.map(item => item.id));
   assert.deepEqual(errors, []);
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
   const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true, reportAttemptTime: true,
-    reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
+    reportAttemptSort: true, reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
