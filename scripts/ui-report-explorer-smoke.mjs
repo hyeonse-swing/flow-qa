@@ -82,6 +82,17 @@ try {
     await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id) && !document.querySelector('#flow-input').disabled, runId);
   };
   const cases = () => page.locator('#report-content .case-report');
+  const clipboardMode = async mode => page.evaluate(mode => {
+    window.copiedCaseIds = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'missing' ? undefined : {
+      writeText(text) {
+        window.copiedCaseIds.push(text);
+        if (mode === 'reject') return Promise.reject(new Error('clipboard-private-error-sentinel'));
+        if (mode === 'pending') return new Promise((resolve, reject) => { window.finishCaseCopy = { resolve, reject }; });
+        return Promise.resolve();
+      }
+    } });
+  }, mode);
   const search = query => page.locator('#report-case-search').fill(query);
   const status = value => page.locator('#report-case-status').selectOption(value);
   const sort = value => page.locator('#report-case-sort').selectOption(value);
@@ -127,6 +138,17 @@ try {
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /2/);
   assert.match(await page.locator('#report-case-count').textContent(), /1.*6|6.*1/);
   assert.match(await page.locator('#report-content').textContent(), /Whole report warning remains visible/);
+  await clipboardMode('success');
+  await cases().getByRole('button', { name: 'Copy case ID CASE-2', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.case-id-copy-status').textContent === 'Case ID copied.');
+  assert.deepEqual(await page.evaluate(() => window.copiedCaseIds), ['CASE-2'], 'Only the case ID is copied after filtering and sorting.');
+  for (const mode of ['reject', 'missing']) {
+    await clipboardMode(mode);
+    await cases().locator('.case-id-copy').click();
+    await page.waitForFunction(() => document.querySelector('.case-id-copy-status').textContent.startsWith('Could not copy.'));
+    assert.equal(await cases().locator('.case-id-copy').isEnabled(), true);
+    assert.equal((await page.locator('body').textContent()).includes('clipboard-private-error-sentinel'), false);
+  }
   const filteredJSON = JSON.parse(await download('#report-json'));
   assert.deepEqual(filteredJSON, report, 'JSON exports the complete original report while filtered.');
   const markdown = await download('#report-md');
@@ -140,6 +162,25 @@ try {
   await reset();
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
   assert.deepEqual(await caseIds(), report.cases.map(item => item.id));
+  await clipboardMode('pending');
+  await cases().nth(1).locator('.case-id-copy').click();
+  assert.equal(await cases().nth(1).locator('.case-id-copy').isDisabled(), true);
+  assert.equal(await cases().nth(0).locator('.case-id-copy').isEnabled(), true, 'Other case buttons remain available.');
+  await search('case-1');
+  await clipboardMode('success');
+  await cases().locator('.case-id-copy').click();
+  await page.waitForFunction(() => document.querySelector('.case-id-copy-status').textContent === 'Case ID copied.');
+  await page.evaluate(async () => { window.finishCaseCopy.reject(new Error('late-private-error')); await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.equal(await cases().locator('.case-id-copy-status').textContent(), 'Case ID copied.', 'A detached copy response cannot overwrite a newer case message.');
+  await search('');
+  await clipboardMode('pending');
+  await cases().nth(0).locator('.case-id-copy').click();
+  await page.locator('[data-view="scenario"]').click();
+  await page.locator('[data-view="history"]').click();
+  await page.evaluate(async () => { window.finishCaseCopy.resolve(); await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.equal(await cases().nth(0).locator('.case-id-copy').isEnabled(), true);
+  assert.equal(await cases().nth(0).locator('.case-id-copy-status').textContent(), '', 'Navigation invalidates late copy feedback.');
+  await clipboardMode('success');
   for (const query of ['ASSERTION_MISMATCH', 'outer PACKET', 'STEP_MISMATCH', 'nested token', 'TEARDOWN_NOTE', 'secondary teardown', 'Attempt step 2']) {
     await search(query); assert.equal(await cases().count(), 1, query); assert.ok((await cases().textContent()).includes('CASE-2'));
   }
@@ -155,6 +196,9 @@ try {
   await page.locator('#language-select').selectOption('ko');
   assert.match(await cases().locator('h3').textContent(), / · 시도 2회$/);
   assert.equal(await cases().locator('.case-attempt-time').textContent(), '시도 시간 합계: 80ms');
+  await cases().getByRole('button', { name: '케이스 ID CASE-2 복사', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.case-id-copy-status').textContent === '케이스 ID를 복사했습니다.');
+  assert.deepEqual(await page.evaluate(() => window.copiedCaseIds), ['CASE-2']);
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2');
   assert.equal(await page.locator('#report-case-status').inputValue(), 'failed-error');
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc');
@@ -237,6 +281,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
   const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true, reportAttemptTime: true,
+    reportCopyCaseId: true, clipboardWrites: 'stubbed', clipboardFailures: true, staleCopyFeedbackIgnored: true,
     reportAttemptSort: true, reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };

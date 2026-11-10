@@ -739,6 +739,37 @@
       const attemptCount = (item.attempts || []).length;
       const attemptCountLabel = t(attemptCount === 1 ? 'report.attemptCountSingular' : 'report.attemptCountPlural', { count: attemptCount });
       const section = el('section', 'case-report'); section.append(el('h3', '', `${item.id} · ${item.title} · ${i18n.status(item.status)} · ${attemptCountLabel}`));
+      const actions = el('div', 'case-id-actions');
+      const copyButton = el('button', 'button quiet case-id-copy', t('report.copyCaseId'));
+      copyButton.type = 'button';
+      copyButton.setAttribute('aria-label', t('report.copyCaseIdAria', { id: item.id }));
+      const copyStatus = el('span', 'hint case-id-copy-status');
+      copyStatus.setAttribute('role', 'status');
+      copyStatus.setAttribute('aria-live', 'polite');
+      copyButton.addEventListener('click', async () => {
+        copyStatus.textContent = '';
+        const runId = app.selectedRun;
+        const report = app.report;
+        const navigationVersion = app.navigationVersion;
+        const view = app.view;
+        const locale = i18n.locale();
+        const canUpdateStatus = () => copyButton.isConnected && copyStatus.isConnected
+          && app.selectedRun === runId && app.report === report
+          && app.navigationVersion === navigationVersion && app.view === view && view === 'history'
+          && i18n.locale() === locale;
+        copyButton.disabled = true;
+        try {
+          if (!globalThis.navigator?.clipboard || typeof globalThis.navigator.clipboard.writeText !== 'function') throw new Error('Clipboard API unavailable');
+          await globalThis.navigator.clipboard.writeText(String(item.id));
+          if (canUpdateStatus()) copyStatus.textContent = t('report.caseIdCopied');
+        } catch {
+          if (canUpdateStatus()) copyStatus.textContent = t('report.caseIdCopyFailed');
+        } finally {
+          if (copyButton.isConnected) copyButton.disabled = false;
+        }
+      });
+      actions.append(copyButton, copyStatus);
+      section.append(actions);
       const totalAttemptTime = reportCaseTotalAttemptDurationMs(item.attempts);
       if (totalAttemptTime !== null) section.append(el('p', 'hint case-attempt-time', t('report.totalAttemptTime', { duration: totalAttemptTime })));
       if (item.reason) section.append(el('p', '', t('app.reason', { reason: item.reason })));

@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.5: copy case IDs from detailed reports
+
+Each case in the detailed report now has a **Copy case ID** button. It copies only the recorded ID and shows success or failure beside that case, with English and Korean messages. If clipboard access is blocked or unavailable, the message explains how to copy the ID manually from the heading.
+
+Only the clicked button is disabled while copying. Feedback from a previous report, language, navigation state, or removed row is ignored. Filtering, sorting, downloads, evidence links, failed/error preparation, and recorded results keep their existing behavior.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-10 (Asia/Seoul): 118 tests, type checking, UI syntax/design-system audit, the report-explorer browser smoke, and package checks passed. Browser fixtures covered exact-ID copying after filters/sorting, success, rejection, missing Clipboard API, pending-button isolation, stale detached/navigation responses, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and verified the copy action in the installed UI. Clipboard writes were stubbed to avoid changing the host clipboard; OS clipboard permissions were not tested. No model calls, external logins, or native-device runs were used.
+
+- Package: [`@ihyeon/flow-qa@0.8.5`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.5)
+- Release: [GitHub 0.8.5](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.5)
+
 ## 0.8.4: find cases with repeated attempts
 
 Detailed reports now offer **Case order → Most attempts first**. Cases sort by the number of saved attempts, keeping equal counts in their original order and placing zero-attempt cases last. Timing availability does not affect this order, and the view does not infer retries or change recorded outcomes. English and Korean labels are available.

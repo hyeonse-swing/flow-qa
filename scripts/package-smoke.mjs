@@ -152,6 +152,12 @@ try {
   assert.equal(await page.locator('#report-content .case-report').count(), 1);
   assert.match(await page.locator('#report-content .case-report h3').textContent(), / · 1 attempt$/);
   assert.equal(await page.locator('#report-content .case-attempt-time').textContent(), `Total attempt time: ${failedFixture.cases.find(item => item.id === 'TC-002').attempts[0].durationMs}ms`);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+    async writeText(text) { window.copiedCaseId = text; }
+  } }));
+  await page.getByRole('button', { name: 'Copy case ID TC-002', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.case-id-copy-status').textContent === 'Case ID copied.');
+  assert.equal(await page.evaluate(() => window.copiedCaseId), 'TC-002');
   await page.locator('#report-case-search').fill('TC-003');
   assert.equal(await page.locator('#report-content .case-report').count(), 0);
   const fullDownload = page.waitForEvent('download');
@@ -218,7 +224,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
