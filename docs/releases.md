@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.6: download the visible case IDs
+
+Use **Download visible case IDs** in a detailed report to save a UTF-8 text list for a QA handoff. The list follows the current search, status filter, and case order. Each line contains only the original ID. If no cases match, the button is disabled. If a visible legacy ID contains a line break, filter it out or use the full JSON report.
+
+Markdown and JSON still export the full opened report in its recorded order. Downloading an ID list does not change case selection or start a run.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-13 (Asia/Seoul): 118 tests, type checking, the UI design-system check, the report-explorer browser smoke, and the package checks passed. Chromium downloaded real files and checked their names and contents for filtered, sorted, partial, and Unicode cases. Zero matches and multiline IDs disabled the TXT button. A fresh tarball installation ran seven passing browser cases and checked the filtered TXT download while the JSON export kept the complete report.
+
+- Package: [`@ihyeon/flow-qa@0.8.6`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.6)
+- Release: [GitHub 0.8.6](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.6)
+
 ## 0.8.5: copy case IDs from detailed reports
 
 Each case in the detailed report now has a **Copy case ID** button. It copies only the recorded ID and shows success or failure beside that case, with English and Korean messages. If clipboard access is blocked or unavailable, the message explains how to copy the ID manually from the heading.

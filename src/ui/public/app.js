@@ -671,6 +671,15 @@
       download(`${runId}.md`, result.markdown, 'text/markdown');
     } catch (error) { if (runId === app.selectedRun && locale === i18n.locale()) showError(error); }
   }
+  function downloadVisibleReportCaseIds() {
+    const report = app.report;
+    const runId = app.selectedRun;
+    if (!report || !runId) return;
+    const displayed = getDisplayedReportCases(report.cases || [], app.reportFilter);
+    const ids = displayed.map((item) => String(item.id));
+    if (!ids.length || reportCaseIdsContainLineBreak(displayed)) return;
+    download(`${runId}-case-ids.txt`, `${ids.join('\n')}\n`, 'text/plain');
+  }
   const reportStatuses = ['all', 'failed-error', 'passed', 'failed', 'error', 'blocked', 'flaky', 'skipped'];
   function reportCaseTotalAttemptDurationMs(attempts) {
     if (!Array.isArray(attempts) || attempts.length === 0 || !attempts.every((attempt) => typeof attempt?.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) return null;
@@ -689,6 +698,23 @@
       }
     }
     return values.some((value) => String(value ?? '').toLowerCase().includes(query));
+  }
+  function getDisplayedReportCases(cases, filter) {
+    const query = filter.search.trim().toLowerCase();
+    const status = filter.status;
+    const shown = cases.map((item, index) => ({ item, index })).filter(({ item }) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
+    if (filter.sort === 'duration-desc') shown.sort((left, right) => {
+      const leftDuration = reportCaseTotalAttemptDurationMs(left.item.attempts);
+      const rightDuration = reportCaseTotalAttemptDurationMs(right.item.attempts);
+      if (leftDuration === null) return rightDuration === null ? left.index - right.index : 1;
+      if (rightDuration === null) return -1;
+      return rightDuration - leftDuration || left.index - right.index;
+    });
+    else if (filter.sort === 'attempts-desc') shown.sort((left, right) => (right.item.attempts || []).length - (left.item.attempts || []).length || left.index - right.index);
+    return shown.map(({ item }) => item);
+  }
+  function reportCaseIdsContainLineBreak(cases) {
+    return cases.some((item) => /[\r\n\u0085\u2028\u2029]/.test(String(item.id)));
   }
   function renderReportFilters() {
     const cases = app.report?.cases || [];
@@ -717,21 +743,17 @@
     return cases;
   }
   function renderReportCases() {
-    if (!app.report) return;
+    if (!app.report) {
+      $('report-case-ids-download').disabled = true;
+      $('report-case-ids-hint').hidden = true;
+      return;
+    }
     const cases = renderReportFilters();
-    const query = app.reportFilter.search.trim().toLowerCase();
-    const status = app.reportFilter.status;
-    const shown = cases.map((item, index) => ({ item, index })).filter(({ item }) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
-    if (app.reportFilter.sort === 'duration-desc') shown.sort((left, right) => {
-      const leftDuration = reportCaseTotalAttemptDurationMs(left.item.attempts);
-      const rightDuration = reportCaseTotalAttemptDurationMs(right.item.attempts);
-      if (leftDuration === null) return rightDuration === null ? left.index - right.index : 1;
-      if (rightDuration === null) return -1;
-      return rightDuration - leftDuration || left.index - right.index;
-    });
-    else if (app.reportFilter.sort === 'attempts-desc') shown.sort((left, right) => (right.item.attempts || []).length - (left.item.attempts || []).length || left.index - right.index);
-    const displayed = shown.map(({ item }) => item);
+    const displayed = getDisplayedReportCases(cases, app.reportFilter);
+    const hasLineBreakInDisplayedId = reportCaseIdsContainLineBreak(displayed);
     $('report-case-count').textContent = t('report.caseCount', { shown: displayed.length, total: cases.length });
+    $('report-case-ids-download').disabled = !app.selectedRun || displayed.length === 0 || hasLineBreakInDisplayedId;
+    $('report-case-ids-hint').hidden = !hasLineBreakInDisplayedId;
     const host = $('report-case-list'); replace(host);
     if (!cases.length) { host.append(el('p', 'empty', t('report.empty'))); return; }
     if (!displayed.length) { host.append(el('p', 'empty', t('report.noMatches'))); return; }
@@ -890,6 +912,7 @@
     $('script-download').addEventListener('click', () => { if (app.draft && !app.dirty && !app.stale) download(`${app.draft.id || 'flow-qa'}.test.mjs`, app.script, 'text/javascript'); });
     $('report-md').addEventListener('click', downloadReportMarkdown);
     $('report-json').addEventListener('click', () => { if (app.report) download(`${app.selectedRun}.json`, JSON.stringify(app.report, null, 2), 'application/json'); });
+    $('report-case-ids-download').addEventListener('click', downloadVisibleReportCaseIds);
     $('report-rerun').addEventListener('click', prepareFailedCases);
     $('report-case-search').addEventListener('input', (event) => { app.reportFilter.search = event.currentTarget.value; renderReportCases(); });
     $('report-case-status').addEventListener('change', (event) => { app.reportFilter.status = event.currentTarget.value; renderReportCases(); });

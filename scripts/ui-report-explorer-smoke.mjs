@@ -62,6 +62,8 @@ try {
     id: `DURATION-${index}`, title: 'Duration fixture', status: 'passed', expected: [], attempts,
   })) };
   await saveReport(durationEdges);
+  const legacyIds = { ...report, runId: randomUUID(), cases: ['검토-α', 'old\nmultiline'].map(id => ({ ...report.cases[0], id })) };
+  await saveReport(legacyIds);
   ui = await startUIServer({ workspace, port: 0 });
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -98,11 +100,18 @@ try {
   const sort = value => page.locator('#report-case-sort').selectOption(value);
   const caseIds = async () => (await cases().locator('h3').allTextContents()).map(heading => heading.split(' · ')[0]);
   const reset = () => page.locator('#report-case-reset').click();
-  const download = async id => {
+  const download = async (id, expectedFilename) => {
     const pending = page.waitForEvent('download'); await page.locator(id).click();
-    return readFile(await (await pending).path(), 'utf8');
+    const file = await pending;
+    if (expectedFilename) assert.equal(file.suggestedFilename(), expectedFilename);
+    return readFile(await file.path(), 'utf8');
   };
+  const idsButton = page.locator('#report-case-ids-download');
+  const idList = runId => download('#report-case-ids-download', `${runId}-case-ids.txt`);
+  assert.equal(await idsButton.isDisabled(), true);
   await open();
+  assert.equal(await idsButton.textContent(), 'Download visible case IDs');
+  assert.equal(await idList(report.runId), 'CASE-1\nCASE-2\nCASE-3\nCASE-4\nCASE-5\nCASE-6\n');
   assert.equal(await cases().count(), 6);
   const caseHeadings = await cases().locator('h3').allTextContents();
   assert.match(caseHeadings[0], / · 1 attempt$/);
@@ -117,6 +126,7 @@ try {
   assert.equal(await page.locator('#report-case-reset').isDisabled(), true);
   await sort('duration-desc');
   assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
+  assert.equal(await idList(report.runId), 'CASE-2\nCASE-1\nCASE-3\nCASE-4\nCASE-5\nCASE-6\n');
   assert.equal(await page.locator('#report-case-reset').isEnabled(), true, 'Sorting alone enables reset.');
   await sort('attempts-desc');
   assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
@@ -151,6 +161,7 @@ try {
   }
   const filteredJSON = JSON.parse(await download('#report-json'));
   assert.deepEqual(filteredJSON, report, 'JSON exports the complete original report while filtered.');
+  assert.equal(await idList(report.runId), 'CASE-2\n', 'The TXT export applies both filters.');
   const markdown = await download('#report-md');
   assert.equal(markdown, await readFile(path.join(reportDir, 'qa-report.md'), 'utf8'), 'Markdown exports the complete saved report while filtered.');
   const evidenceLink = cases().locator('a[href*="/api/artifact"]').first();
@@ -189,6 +200,7 @@ try {
   await search('한국어'); assert.equal(await cases().count(), 1);
   await search('hidden-path-sentinel'); assert.equal(await cases().count(), 0, 'Artifact paths are not searchable case content.');
   await search('Outcome 1'); await status('failed-error'); assert.equal(await cases().count(), 0, 'Search and status intersect.');
+  assert.equal(await idsButton.isDisabled(), true);
   assert.match(await page.locator('#report-case-count').textContent(), /0.*6|6.*0/);
   assert.equal(await page.locator('#report-rerun').isEnabled(), true, 'Hidden failures remain eligible for preparation.');
   await reset(); assert.equal(await cases().count(), 6);
@@ -204,6 +216,7 @@ try {
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc');
   assert.equal(await page.locator('label[for="report-case-sort"]').textContent(), '케이스 정렬');
   assert.equal(await page.locator('#report-case-sort option:checked').textContent(), '시도 시간이 긴 순');
+  assert.equal(await idsButton.textContent(), '표시된 케이스 ID 다운로드');
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /실패.*오류.*2/);
   await page.locator('[data-view="scenario"]').click();
   assert.equal(await page.locator('#suite-editor').inputValue(), draftBefore);
@@ -238,8 +251,10 @@ try {
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded', 'Opening another report resets sorting.');
   assert.equal(await cases().count(), 2);
   assert.match(await page.locator('#report-case-count').textContent(), /2/);
+  assert.equal(await idList(partial.runId), 'CASE-1\nCASE-3\n', 'An opened partial report exports only its own cases.');
   assert.match(await page.locator('#report-content .selection-scope').textContent(), /2.*6|6.*2/);
   await open(empty.runId);
+  assert.equal(await idsButton.isDisabled(), true);
   await sort('duration-desc');
   assert.equal(await cases().count(), 0);
   assert.match(await page.locator('#report-content').textContent(), /기록된.*없|케이스.*없/);
@@ -264,6 +279,7 @@ try {
   assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Sorting never mutates the exported report.');
   await sort('attempts-desc');
   assert.deepEqual(await caseIds(), [2, 6, 1, 3, 4, 5, 7, 8, 9, 10, 0].map(index => `DURATION-${index}`), 'Attempt ordering uses only recorded counts, preserves ties, and does not depend on valid timing.');
+  assert.equal(await idList(durationEdges.runId), (await caseIds()).join('\n') + '\n');
   assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Attempt sorting keeps all recorded statuses and original export order.');
   await page.locator('#language-select').selectOption('ko');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -279,9 +295,16 @@ try {
   await sort('recorded');
   assert.deepEqual(await caseIds(), durationEdges.cases.map(item => item.id));
   assert.deepEqual(errors, []);
+  await open(legacyIds.runId);
+  assert.equal(await idsButton.isDisabled(), true, 'A multiline ID cannot be represented as one literal ID per line.');
+  assert.equal(await page.locator('#report-case-ids-hint').isVisible(), true);
+  assert.deepEqual(JSON.parse(await download('#report-json')), legacyIds);
+  await search('검토');
+  assert.equal(await page.locator('#report-case-ids-hint').isHidden(), true);
+  assert.equal(await idList(legacyIds.runId), '검토-α\n', 'Single-line legacy IDs are exported without changing Unicode.');
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
   const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true, reportAttemptTime: true,
-    reportCopyCaseId: true, clipboardWrites: 'stubbed', clipboardFailures: true, staleCopyFeedbackIgnored: true,
+    visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', clipboardFailures: true, staleCopyFeedbackIgnored: true,
     reportAttemptSort: true, reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };

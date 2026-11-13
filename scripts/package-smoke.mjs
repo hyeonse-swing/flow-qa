@@ -148,7 +148,17 @@ try {
   assert.deepEqual((await page.locator('#report-content .case-report h3').allTextContents()).map(heading => heading.split(' · ')[0]), sortedCaseIds);
   await page.locator('#report-case-sort').selectOption('attempts-desc');
   assert.deepEqual((await page.locator('#report-content .case-report h3').allTextContents()).map(heading => heading.split(' · ')[0]), ['TC-003', 'TC-001', 'TC-002']);
+  const downloadIds = async () => {
+    const pending = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download visible case IDs', exact: true }).click();
+    const file = await pending;
+    assert.equal(file.suggestedFilename(), `${failedFixture.runId}-case-ids.txt`);
+    return readFile(await file.path(), 'utf8');
+  };
+  await page.locator('#report-case-status').selectOption('passed');
+  assert.equal(await downloadIds(), 'TC-003\nTC-001\n');
   await page.locator('#report-case-status').selectOption('failed-error');
+  assert.equal(await downloadIds(), 'TC-002\n');
   assert.equal(await page.locator('#report-content .case-report').count(), 1);
   assert.match(await page.locator('#report-content .case-report h3').textContent(), / · 1 attempt$/);
   assert.equal(await page.locator('#report-content .case-attempt-time').textContent(), `Total attempt time: ${failedFixture.cases.find(item => item.id === 'TC-002').attempts[0].durationMs}ms`);
@@ -160,6 +170,7 @@ try {
   assert.equal(await page.evaluate(() => window.copiedCaseId), 'TC-002');
   await page.locator('#report-case-search').fill('TC-003');
   assert.equal(await page.locator('#report-content .case-report').count(), 0);
+  assert.equal(await page.locator('#report-case-ids-download').isDisabled(), true);
   const fullDownload = page.waitForEvent('download');
   await page.locator('#report-json').click();
   const downloadedReport = JSON.parse(await readFile(await (await fullDownload).path(), 'utf8'));
@@ -224,7 +235,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {
