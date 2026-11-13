@@ -4,7 +4,8 @@
   const i18n = window.FlowQAI18n;
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: { search: '', status: 'all', sort: 'recorded' }, rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const defaultReportFilter = () => ({ search: '', status: 'all', sort: 'recorded', repeatedOnly: false });
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -636,7 +637,7 @@
     catch (error) { showError(error); }
     finally { app.stopping = false; readiness(); }
   }
-  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = { search: '', status: 'all', sort: 'recorded' }; app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = defaultReportFilter(); app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
   async function prepareFailedCases() { await work(async () => {
     const runId = app.selectedRun;
     const report = app.report;
@@ -702,7 +703,7 @@
   function getDisplayedReportCases(cases, filter) {
     const query = filter.search.trim().toLowerCase();
     const status = filter.status;
-    const shown = cases.map((item, index) => ({ item, index })).filter(({ item }) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query));
+    const shown = cases.map((item, index) => ({ item, index })).filter(({ item }) => (status === 'all' || (status === 'failed-error' ? item.status === 'failed' || item.status === 'error' : item.status === status)) && reportCaseMatchesSearch(item, query) && (!filter.repeatedOnly || (Array.isArray(item.attempts) && item.attempts.length >= 2)));
     if (filter.sort === 'duration-desc') shown.sort((left, right) => {
       const leftDuration = reportCaseTotalAttemptDurationMs(left.item.attempts);
       const rightDuration = reportCaseTotalAttemptDurationMs(right.item.attempts);
@@ -739,7 +740,8 @@
     if ($('report-case-search').value !== app.reportFilter.search) $('report-case-search').value = app.reportFilter.search;
     $('report-case-status').value = app.reportFilter.status;
     $('report-case-sort').value = app.reportFilter.sort;
-    $('report-case-reset').disabled = !app.reportFilter.search && app.reportFilter.status === 'all' && app.reportFilter.sort === 'recorded';
+    $('report-case-repeated-only').checked = app.reportFilter.repeatedOnly;
+    $('report-case-reset').disabled = !app.reportFilter.search && app.reportFilter.status === 'all' && app.reportFilter.sort === 'recorded' && !app.reportFilter.repeatedOnly;
     return cases;
   }
   function renderReportCases() {
@@ -917,7 +919,8 @@
     $('report-case-search').addEventListener('input', (event) => { app.reportFilter.search = event.currentTarget.value; renderReportCases(); });
     $('report-case-status').addEventListener('change', (event) => { app.reportFilter.status = event.currentTarget.value; renderReportCases(); });
     $('report-case-sort').addEventListener('change', (event) => { app.reportFilter.sort = event.currentTarget.value; renderReportCases(); });
-    $('report-case-reset').addEventListener('click', () => { app.reportFilter = { search: '', status: 'all', sort: 'recorded' }; renderReportCases(); });
+    $('report-case-repeated-only').addEventListener('change', (event) => { app.reportFilter.repeatedOnly = event.currentTarget.checked; renderReportCases(); });
+    $('report-case-reset').addEventListener('click', () => { app.reportFilter = defaultReportFilter(); renderReportCases(); });
     $('target-form').addEventListener('submit', saveTarget);
     $('target-kind').addEventListener('change', targetFields); targetFields();
     $('language-select').addEventListener('change', (event) => i18n.setLocale(event.currentTarget.value));

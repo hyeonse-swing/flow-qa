@@ -110,6 +110,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .report-case-filters label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
 .report-case-filters input, .report-case-filters select { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--paper); color: var(--ink); }
 #report-case-count { margin: 12px 0 4px; }
+.report-repeated-filter { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px; font-size: 13px; cursor: pointer; }
+.report-repeated-filter input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--accent-solid); }
 .blocked-title { margin-top: 21px !important; color: var(--accent-text); }
 .draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: calc(var(--space-factor) * 16px) 0; }
 .draft-actions span { color: var(--muted); font-size: 12px; }

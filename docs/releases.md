@@ -2,6 +2,17 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.7: filter cases with multiple attempts
+
+In a detailed report, check **At least 2 attempts** to inspect only cases with two or more recorded attempts. The filter starts off and combines with case search, status, and sorting. It includes cases by attempt count regardless of outcome or missing timing. Choose **Download visible case IDs** to save the matching list.
+
+Resetting filters or opening a different report clears the checkbox; reopening the same report preserves it. Status-option counts, full Markdown/JSON downloads, and failed/error preparation still use the whole report.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-13 (Asia/Seoul): 118 tests, type checking, UI checks, the report-explorer browser smoke, and package checks passed. Browser fixtures checked the two-attempt boundary, missing timing, combined filters, persistence/reset, full downloads and rerun scope, English/Korean, and a 390px layout. A fresh tarball installation ran seven passing browser cases and verified that the downloaded ID list included a three-attempt case and excluded a single-attempt case with the same status.
+
+- Package: [`@ihyeon/flow-qa@0.8.7`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.8.7)
+- Release: [GitHub 0.8.7](https://github.com/hyeonse-swing/flow-qa/releases/tag/v0.8.7)
+
 ## 0.8.6: download the visible case IDs
 
 Use **Download visible case IDs** in a detailed report to save a UTF-8 text list for a QA handoff. The list follows the current search, status filter, and case order. Each line contains only the original ID. If no cases match, the button is disabled. If a visible legacy ID contains a line break, filter it out or use the full JSON report.

@@ -150,6 +150,7 @@
     'report.sortRecorded': ['Recorded order', '기록 순서'],
     'report.sortDurationDescending': ['Longest attempt time first', '시도 시간이 긴 순'],
     'report.sortAttemptsDescending': ['Most attempts first', '시도가 많은 순'],
+    'report.repeatedOnly': ['At least 2 attempts', '시도 2회 이상만 보기'],
     'report.downloadCaseIds': ['Download visible case IDs', '표시된 케이스 ID 다운로드'],
     'report.caseIdsLineBreakHint': ['A visible case ID contains a line break. Download JSON or narrow the filter.', '표시 중인 케이스 ID에 줄바꿈이 포함되어 있습니다. JSON을 다운로드하거나 필터를 좁혀 주세요.'],
     'report.copyCaseId': ['Copy case ID', '케이스 ID 복사'],

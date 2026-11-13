@@ -107,6 +107,7 @@ try {
     return readFile(await file.path(), 'utf8');
   };
   const idsButton = page.locator('#report-case-ids-download');
+  const repeated = page.locator('#report-case-repeated-only');
   const idList = runId => download('#report-case-ids-download', `${runId}-case-ids.txt`);
   assert.equal(await idsButton.isDisabled(), true);
   await open();
@@ -124,6 +125,15 @@ try {
   assert.match(await page.locator('#report-case-count').textContent(), /6/);
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
   assert.equal(await page.locator('#report-case-reset').isDisabled(), true);
+  assert.equal(await repeated.isChecked(), false);
+  await page.getByRole('checkbox', { name: 'At least 2 attempts', exact: true }).check();
+  assert.deepEqual(await caseIds(), ['CASE-2'], 'Only the case with two saved attempts remains.');
+  assert.equal(await idList(report.runId), 'CASE-2\n');
+  assert.equal(await page.locator('#report-case-reset').isEnabled(), true);
+  assert.match(await page.locator('#report-case-status option[value="all"]').textContent(), /\(6\)/, 'Status counts describe the full report.');
+  await reset();
+  assert.equal(await repeated.isChecked(), false);
+  assert.equal(await cases().count(), 6);
   await sort('duration-desc');
   assert.deepEqual(await caseIds(), ['CASE-2', 'CASE-1', 'CASE-3', 'CASE-4', 'CASE-5', 'CASE-6']);
   assert.equal(await idList(report.runId), 'CASE-2\nCASE-1\nCASE-3\nCASE-4\nCASE-5\nCASE-6\n');
@@ -143,6 +153,9 @@ try {
     assert.ok((await cases().textContent()).includes(`CASE-${index + 1}`));
   }
   await status('failed-error'); assert.equal(await cases().count(), 2);
+  await repeated.check();
+  assert.deepEqual(await caseIds(), ['CASE-2']);
+  await search('case-3'); assert.equal(await cases().count(), 0); assert.equal(await idsButton.isDisabled(), true);
   await search('  case-2  '); assert.equal(await cases().count(), 1);
   assert.equal(await page.locator('#report-case-search').evaluate(input => input === document.activeElement), true, 'Typing keeps focus.');
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /2/);
@@ -205,6 +218,7 @@ try {
   assert.equal(await page.locator('#report-rerun').isEnabled(), true, 'Hidden failures remain eligible for preparation.');
   await reset(); assert.equal(await cases().count(), 6);
   await status('failed-error'); await search('case-2'); await sort('duration-desc');
+  await repeated.check();
   await page.locator('#language-select').selectOption('ko');
   assert.match(await cases().locator('h3').textContent(), / · 시도 2회$/);
   assert.equal(await cases().locator('.case-attempt-time').textContent(), '시도 시간 합계: 80ms');
@@ -217,6 +231,7 @@ try {
   assert.equal(await page.locator('label[for="report-case-sort"]').textContent(), '케이스 정렬');
   assert.equal(await page.locator('#report-case-sort option:checked').textContent(), '시도 시간이 긴 순');
   assert.equal(await idsButton.textContent(), '표시된 케이스 ID 다운로드');
+  assert.equal(await page.getByRole('checkbox', { name: '시도 2회 이상만 보기', exact: true }).isChecked(), true);
   assert.match(await page.locator('#report-case-status option[value="failed-error"]').textContent(), /실패.*오류.*2/);
   await page.locator('[data-view="scenario"]').click();
   assert.equal(await page.locator('#suite-editor').inputValue(), draftBefore);
@@ -230,6 +245,7 @@ try {
   assert.equal(await page.locator('#report-case-status').inputValue(), 'failed-error');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc', 'Sort persists through navigation and refresh.');
+  assert.equal(await repeated.isChecked(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-explorer-ko-mobile.png') });
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -237,6 +253,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#history-list').getAttribute('aria-busy') === 'false');
   await open();
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2', 'Reloading the same report preserves filters.');
+  assert.equal(await repeated.isChecked(), true);
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc');
   const failedLoad = page.waitForResponse(response => response.url().includes('/api/report?') && response.url().includes(unreadable.runId));
   await page.locator(`#history-list [data-run-id="${unreadable.runId}"] [data-action="view-report"]`).click();
@@ -245,7 +262,9 @@ try {
   assert.equal(await page.locator('#report-case-search').inputValue(), 'case-2');
   assert.ok((await page.locator('#report-heading').textContent()).includes(report.runId));
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'duration-desc', 'A failed load preserves sorting.');
+  assert.equal(await repeated.isChecked(), true);
   await open(partial.runId);
+  assert.equal(await repeated.isChecked(), false);
   assert.equal(await page.locator('#report-case-search').inputValue(), '');
   assert.equal(await page.locator('#report-case-status').inputValue(), 'all');
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded', 'Opening another report resets sorting.');
@@ -259,6 +278,8 @@ try {
   assert.equal(await cases().count(), 0);
   assert.match(await page.locator('#report-content').textContent(), /기록된.*없|케이스.*없/);
   await open(); await status('passed'); await sort('attempts-desc');
+  await repeated.check();
+  assert.equal(await cases().count(), 0);
   const preparing = page.waitForResponse(response => response.url().includes('/api/rerun?'));
   await page.locator('#report-rerun').click();
   assert.equal((await preparing).status(), 200);
@@ -280,6 +301,9 @@ try {
   await sort('attempts-desc');
   assert.deepEqual(await caseIds(), [2, 6, 1, 3, 4, 5, 7, 8, 9, 10, 0].map(index => `DURATION-${index}`), 'Attempt ordering uses only recorded counts, preserves ties, and does not depend on valid timing.');
   assert.equal(await idList(durationEdges.runId), (await caseIds()).join('\n') + '\n');
+  await repeated.check();
+  assert.deepEqual(await caseIds(), ['DURATION-2', 'DURATION-6'], 'Two recorded attempts qualify even with missing or overflowing timing.');
+  await repeated.uncheck();
   assert.deepEqual(JSON.parse(await download('#report-json')), durationEdges, 'Attempt sorting keeps all recorded statuses and original export order.');
   await page.locator('#language-select').selectOption('ko');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -304,7 +328,7 @@ try {
   assert.equal(await idList(legacyIds.runId), '검토-α\n', 'Single-line legacy IDs are exported without changing Unicode.');
   assert.deepEqual(JSON.parse(await readFile(path.join(reportDir, 'qa-report.json'), 'utf8')), report);
   const result = { fixtureStatuses: statuses.length, caseSearch: true, errorAndStepSearch: true, statusCounts: true, reportAttemptCount: true, reportAttemptTime: true,
-    visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', clipboardFailures: true, staleCopyFeedbackIgnored: true,
+    repeatedAttemptFilter: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', clipboardFailures: true, staleCopyFeedbackIgnored: true,
     reportAttemptSort: true, reportDurationSort: true, stableDurationTies: true, unknownDurationsLast: true, combinedFilters: true, fullExportsPreserved: true, originalEvidenceIndices: true, fullRerunScope: true,
     sameReportPreservesFilters: true, newReportResetsFilters: true, failedLoadPreservesFilters: true,
     partialScope: true, emptyReport: true, draftAndReviewPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };

@@ -130,7 +130,7 @@ try {
   // the prepared selection then performs a real browser run.
   const failedFixture = { ...report, runId: randomUUID(), status: 'failed', cases: report.cases.map(item => ({ ...item, status: item.id === 'TC-002' ? 'failed' : 'passed' })) };
   const repeatedCase = failedFixture.cases.find(item => item.id === 'TC-003');
-  repeatedCase.attempts = [...repeatedCase.attempts, { ...repeatedCase.attempts[0], index: 1 }];
+  repeatedCase.attempts = [...repeatedCase.attempts, { ...repeatedCase.attempts[0], index: 1 }, { ...repeatedCase.attempts[0], index: 2 }];
   const fixtureDir = path.join(consumer, '.flowqa/ui-demo-en/.flowqa/runs', failedFixture.runId);
   await mkdir(fixtureDir, { recursive: true });
   await writeFile(path.join(fixtureDir, 'qa-report.json'), JSON.stringify(failedFixture));
@@ -157,7 +157,13 @@ try {
   };
   await page.locator('#report-case-status').selectOption('passed');
   assert.equal(await downloadIds(), 'TC-003\nTC-001\n');
+  const repeated = page.getByRole('checkbox', { name: 'At least 2 attempts', exact: true });
+  await repeated.check();
+  assert.equal(await downloadIds(), 'TC-003\n', 'The installed UI includes a case with three recorded attempts.');
   await page.locator('#report-case-status').selectOption('failed-error');
+  assert.equal(await page.locator('#report-content .case-report').count(), 0);
+  assert.equal(await page.locator('#report-case-ids-download').isDisabled(), true);
+  await repeated.uncheck();
   assert.equal(await downloadIds(), 'TC-002\n');
   assert.equal(await page.locator('#report-content .case-report').count(), 1);
   assert.match(await page.locator('#report-content .case-report h3').textContent(), / · 1 attempt$/);
@@ -235,7 +241,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, repeatedAttemptFilter: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

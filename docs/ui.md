@@ -7,7 +7,7 @@ Describe a user flow, review cases, and configure a target when ready to run. We
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Node 25 is unsupported. Upgrade the Node runtime and restart any running UI process; updating Flow QA alone does not patch Node. Install Flow QA and start the web demo:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.6
+npm install -g @ihyeon/flow-qa@0.8.7
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -88,11 +88,13 @@ From `0.8.4`, **Case order → Most attempts first** brings cases with more reco
 
 From `0.8.5`, **Copy case ID** below a case heading copies only that case ID, including after filtering or sorting. Success or failure is shown beside that button. If the browser blocks clipboard access or the API is unavailable, select the ID in the heading and copy it manually. Copying does not start a run or change report data.
 
+From `0.8.7`, check **At least 2 attempts** to show cases with two or more saved attempts, regardless of their final status or recorded timing. It combines with the search and status filters. The visible ID list uses the same filter.
+
 From `0.8.6`, **Download visible case IDs** saves `<run-id>-case-ids.txt`: one ID per line, in the order shown after case search, status filtering, and sorting. The list is UTF-8 text with a final newline. The button is disabled when no cases match. If a legacy ID contains a line break, narrow the filter to exclude that ID or download the full JSON report.
 
 From `0.8.0`, open **Run history → Detailed report** and use **Search cases** with **Case status** to narrow the displayed results. Search ignores case and surrounding whitespace, and matches case IDs, titles, reasons, expected results, attempt errors, secondary errors, step labels, and step errors. User-written Korean text is supported. Artifact paths and translated status labels are not search fields.
 
-**Failed/error only** shows those two recorded statuses; the other status choices distinguish passed, failed, error, blocked, flaky, and skipped. Status-option counts describe the entire open report, while the displayed count shows matches out of that report's recorded cases. A partial run's omitted cases are not included in those counts; its selected/full-suite scope remains visible separately. Report-level warnings remain visible even when no case matches. **Reset filters** clears search and status and restores recorded order.
+**Failed/error only** shows those two recorded statuses; the other status choices distinguish passed, failed, error, blocked, flaky, and skipped. Status-option counts describe the entire open report, while the displayed count shows matches out of that report's recorded cases. A partial run's omitted cases are not included in those counts; its selected/full-suite scope remains visible separately. Report-level warnings remain visible even when no case matches. **Reset filters** clears search and status, unchecks **At least 2 attempts**, and restores recorded order.
 
 Filters and sorting stay while navigating, changing language, refreshing history/settings, or reopening the same report. Successfully opening another report resets them; a failed report load preserves the current report, filters, and sorting. Filters and sorting reset on page reload. Evidence links still refer to each case's original attempt and artifact.
 
