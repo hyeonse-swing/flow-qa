@@ -223,6 +223,7 @@
     'display.currentTheme': ['Change theme: currently {theme}', '테마 변경: 현재 {theme}'],
     'display.themeButton': ['Display · {theme}', '화면 · {theme}'],
     'display.motionSystemReduced': ['motion reduced by system setting', '기기 설정에 따라 움직임 감소'],
+    'display.storageUnavailable': ['Browser storage is unavailable. Display changes apply only to this tab and may reset after reload.', '브라우저 저장소를 사용할 수 없습니다. 화면 설정은 현재 탭에만 적용되며 새로고침하면 초기화될 수 있습니다.'],
     'app.breadcrumb': ['Workspace / {name}', '작업 공간 / {name}'],
     'app.responseUnreadable': ['Could not read the server response ({status}).', '서버 응답을 읽을 수 없습니다 ({status}).'],
     'app.requestFailed': ['Request failed ({status})', '요청 실패 ({status})'],

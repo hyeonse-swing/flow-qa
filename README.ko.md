@@ -16,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24.x(24.22.1 이상) 또는 26.12.1 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.8
+npm install -g @ihyeon/flow-qa@0.8.9
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -95,6 +95,8 @@ CLI에서는 `plan flow.md --platform mobile --prompt-only`로 준비하고, `co
 리포트와 원본 증거에는 테스트 앱의 데이터가 포함될 수 있습니다. `.flowqa/`는 Git에서 제외되지만 외부 공유 전에는 내용을 확인하세요. 마스킹이 모든 개인정보를 탐지한다고 보장하지 않습니다. 세션 준비, 모바일 SDK·기기·앱의 자동 준비, 예약 CI 실행, 팀 권한과 공유 서버는 현재 지원 범위에 포함되지 않습니다.
 
 ![실제 세 케이스 실행 결과](https://raw.githubusercontent.com/hyeonse-swing/flow-qa/main/docs/media/flow-qa-report.png)
+
+화면 설정은 브라우저에 저장하고 탭 간에 동기화합니다. 저장소를 사용할 수 없으면 현재 탭에만 적용된다는 안내가 나타나며, 이후 설정 변경이나 초기화가 정상 저장되면 안내가 사라집니다.
 
 ## 구현과 출처
 

@@ -2,6 +2,14 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.9: report unavailable display-preference storage
+
+Display settings now warns in English or Korean when browser storage cannot be read or written. Choices still apply in the current tab. A successful later change or reset clears the warning and saves the full selection. Cross-tab synchronization ignores unrelated session-storage events.
+
+A dedicated Chromium regression check covers blocked reads/writes, recovery, reload persistence, cross-tab updates, keyboard controls, system reduced motion, and a 390px Korean layout. The installed-package smoke also exercises a failed write followed by a successful save and reload. Storage failures are injected in the browser fixture; no real browser policy or device permission is changed.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-16 (Asia/Seoul): `npm run check` passed 118 tests, type checking and UI checks; all eight `smoke:ui` scripts passed; `check:package` and `smoke:package` passed, including seven real browser cases and the installed preference recovery check. No model calls, real service logins, or native-device tests were performed.
+
 ## 0.8.8: update test-engine dependencies
 
 Update `e2e` to 0.22.0, `@e2e-dev/mobile` to 0.12.5, and Zod to 4.6.7. The installed dependency tree now uses `@modelcontextprotocol/server` 2.4.0 and Zod 4.6.7, including in a fresh npm consumer. This removes the reported high-severity findings in the installed package without relying on root-only npm overrides. Browser and mobile case schemas and Flow QA report formats are unchanged.

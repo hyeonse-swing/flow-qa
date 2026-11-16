@@ -185,6 +185,26 @@ try {
   assert.equal(await page.locator('#report-content .case-report').count(), 3);
   assert.equal(await page.locator('#report-case-sort').inputValue(), 'recorded');
   assert.deepEqual((await page.locator('#report-content .case-report h3').allTextContents()).map(heading => heading.split(' · ')[0]), failedFixture.cases.map(item => item.id));
+  // Exercise storage failure and recovery in the actual installed UI.
+  await page.locator('[data-view="settings"]').click();
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.failPreferenceWrite = true;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'flowqa-display-preferences' && window.failPreferenceWrite) throw new DOMException('Fixture storage unavailable', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator('input[name="accent"][value="forest"]').check();
+  assert.equal(await page.locator('html').getAttribute('data-accent'), 'forest');
+  assert.equal(await page.locator('#preferences-storage-status').isVisible(), true);
+  assert.match(await page.locator('#preferences-storage-status').textContent(), /only.*tab/i);
+  await page.evaluate(() => { window.failPreferenceWrite = false; });
+  await page.locator('input[name="theme"][value="dark"]').check();
+  assert.equal(await page.locator('#preferences-storage-status').isHidden(), true);
+  await page.reload();
+  await page.waitForFunction(() => document.documentElement.dataset.themePreference === 'dark');
+  assert.equal(await page.locator('html').getAttribute('data-accent'), 'forest');
   await browser.close(); browser = null;
   const prepared = await (await get('/api/rerun?runId=' + failedFixture.runId)).json();
   assert.equal(prepared.originRunId, failedFixture.runId);
@@ -241,7 +261,7 @@ try {
   const listedIds = [...firstPage.runs, ...secondPage.runs].map(item => item.runId);
   assert.equal(new Set(listedIds).size, listedIds.length);
   assert.equal(secondPage.nextCursor, null);
-  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, repeatedAttemptFilter: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
+  const evidence = { package: metadata.name, version: metadata.version, source: supplied ? 'npm registry' : 'packed tarball', node: process.version, platform: process.platform, gitRequired: false, commandShim: 'flow-qa', tests: 7, runs: 3, comparison: true, selectiveRun: true, rerunPreparation: 'synthetic failed report to real selected run', fullHistorySearch: true, historyPagination: true, archiveSummary: true, archiveComparison: true, reportExplorer: true, preferenceStorageFailure: true, preferenceStorageRecovery: true, reportAttemptCount: true, reportAttemptTime: true, reportDurationSort: true, reportAttemptSort: true, repeatedAttemptFilter: true, visibleCaseIdDownload: true, reportCopyCaseId: true, clipboardWrites: 'stubbed', filteredReportExportComplete: true, status: report.status, modelCalls: 0, verifiedAt: new Date().toISOString() };
   await writeFile(path.join(artifacts, supplied ? 'registry-smoke.json' : 'tarball-smoke.json'), JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

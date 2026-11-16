@@ -9,8 +9,9 @@ const { t, onChange } = window.FlowQAI18n;
 const themeNames = { system: 'display.themeSystemShort', light: 'display.themeLightShort', dark: 'display.themeDarkShort' };
 const accentNames = { cobalt: 'settings.accentCobalt', forest: 'settings.accentForest', coral: 'settings.accentCoral' };
 let preferences;
+let storageUnavailable = false;
 try { preferences = parsePreferences(localStorage.getItem(storageKey)); }
-catch { preferences = { ...defaultPreferences }; }
+catch { preferences = { ...defaultPreferences }; storageUnavailable = true; }
 
 function apply() {
   const root = document.documentElement;
@@ -27,11 +28,15 @@ function apply() {
   toggle.textContent = t('display.themeButton', { theme });
   toggle.setAttribute('aria-label', t('display.currentTheme', { theme }));
   document.getElementById('preferences-status').textContent = `${theme} · ${t(accentNames[preferences.accent])}${systemReduced.matches ? ` · ${t('display.motionSystemReduced')}` : ''}`;
+  const storageStatus = document.getElementById('preferences-storage-status');
+  storageStatus.textContent = storageUnavailable ? t('display.storageUnavailable') : '';
+  storageStatus.hidden = !storageUnavailable;
 }
 
 function update(next) {
   preferences = validatePreferences(next);
-  try { localStorage.setItem(storageKey, serializePreferences(preferences)); } catch { /* Current tab still works without storage. */ }
+  try { localStorage.setItem(storageKey, serializePreferences(preferences)); storageUnavailable = false; }
+  catch { storageUnavailable = true; }
   apply();
 }
 
@@ -46,6 +51,8 @@ toggle.addEventListener('click', () => {
 });
 document.getElementById('reset-preferences').addEventListener('click', () => update({ ...defaultPreferences }));
 window.addEventListener('storage', (event) => {
+  try { if (event.storageArea !== localStorage) return; }
+  catch { return; }
   if (event.key !== storageKey && event.key !== null) return;
   preferences = parsePreferences(event.newValue);
   apply();

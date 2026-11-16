@@ -37,6 +37,7 @@ jobs:
           name: release-verification-${{ matrix.os }}
           path: |
             output/package/*.json
+            output/playwright/preferences/result.json
             output/playwright/i18n/result.json
             output/playwright/comparison/result.json
             output/playwright/selection/result.json

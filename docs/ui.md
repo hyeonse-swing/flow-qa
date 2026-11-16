@@ -138,7 +138,7 @@ The JSON keeps the case content and source reference. The Markdown retains its e
 
 The UI uses role tokens and preference utilities from `@hyeonse/design-system`, pinned to GitHub commit `38978c6a86f422fc0e63e919f600bc2dd3451e5c`. Flow QA implements its own workflow layout, buttons, and fields with those tokens.
 
-The top-bar theme button and **Connections → Display settings** control theme, accent, density, corners, and motion. Preferences are saved under `flowqa-display-preferences` in the browser and shared across tabs. The device's reduced-motion setting takes priority. The saved preferences are applied before the token CSS appears on first load.
+The top-bar theme button and **Connections → Display settings** control theme, accent, density, corners, and motion. Preferences are saved under `flowqa-display-preferences` in the browser and shared across tabs. The device's reduced-motion setting takes priority. The saved preferences are applied before the token CSS appears on first load. If browser storage cannot be read or written, Display settings shows a localized warning: changes still apply in the current tab but may reset on reload. A successful later change or reset saves the preferences and clears the warning. Only local-storage events synchronize these settings between tabs.
 
 Local DM Sans and a Noto Sans KR subset are used for typography; missing Korean glyphs fall back to installed system fonts. See the [font and package notices](../THIRD_PARTY_NOTICES.md).
 
