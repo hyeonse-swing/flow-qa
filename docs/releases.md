@@ -2,6 +2,12 @@
 
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
+## 0.8.8: update test-engine dependencies
+
+Update `e2e` to 0.22.0, `@e2e-dev/mobile` to 0.12.5, and Zod to 4.6.7. The installed dependency tree now uses `@modelcontextprotocol/server` 2.4.0 and Zod 4.6.7, including in a fresh npm consumer. This removes the reported high-severity findings in the installed package without relying on root-only npm overrides. Browser and mobile case schemas and Flow QA report formats are unchanged.
+
+Locally verified on macOS with Node.js 24.22.1 on 2026-11-16 (Asia/Seoul): `npm run check` passed 118 tests, type checking and UI checks; `npm run demo:smoke` classified a real Chromium pass, intended assertion failure and stopped app as expected; `npm run check:package` passed; and `npm run smoke:package` installed a fresh tarball and passed seven browser cases with selected-run, comparison and UI checks. `npm audit --omit=dev --audit-level=high` and the same audit in a separate fresh tarball consumer reported zero vulnerabilities. No native app or model call was exercised.
+
 ## 0.8.7: filter cases with multiple attempts
 
 In a detailed report, check **At least 2 attempts** to inspect only cases with two or more recorded attempts. The filter starts off and combines with case search, status, and sorting. It includes cases by attempt count regardless of outcome or missing timing. Choose **Download visible case IDs** to save the matching list.

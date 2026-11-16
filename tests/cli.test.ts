@@ -214,7 +214,7 @@ test('CLI authors native cases before target setup and saves user-selected iOS a
     ]) await assert.rejects(qa(...args), (error: unknown) => (error as { code: number }).code === 2);
     assert.equal(await readFile(join(dir, 'flowqa.config.json'), 'utf8'), saved);
     const doctor = await qa('doctor', '--lang', 'ko');
-    assert.match(doctor.stdout, /@e2e-dev\/mobile: 0\.11\.0/);
+    assert.match(doctor.stdout, /@e2e-dev\/mobile: 0\.12\.5/);
     assert.match(doctor.stdout, /모바일 대상 ios-test/);
     assert.match(doctor.stdout, /앱을 설치하거나 실행하지 않습니다/);
   } finally { await rm(dir, { recursive: true, force: true }); }
