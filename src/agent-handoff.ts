@@ -25,20 +25,25 @@ export const agentHandoffRequestSchema = z.object({
   suite: suiteSchema,
 }).strict();
 
+const observationSchema = z.object({
+  stepIndex: z.number().int().min(0).max(99),
+  outcome: z.enum(['matched', 'mismatch']),
+  detail: safeDetail,
+  evidence: evidencePath,
+}).strict();
+const emptyObservations = z.array(observationSchema).length(0);
+const observedAssertions = z.array(observationSchema).min(1).max(100);
+const agentResultCaseSchema = z.discriminatedUnion('status', [
+  z.object({ id: idSchema, status: z.literal('unverified'), observations: emptyObservations }).strict(),
+  z.object({ id: idSchema, status: z.literal('blocked'), reason: safeDetail, observations: emptyObservations }).strict(),
+  z.object({ id: idSchema, status: z.literal('observed-passed'), observations: observedAssertions }).strict(),
+  z.object({ id: idSchema, status: z.literal('observed-failed'), observations: observedAssertions }).strict(),
+]);
+
 export const agentResultSchema = z.object({
   schemaVersion: z.literal('flow-qa/agent-result-1'),
   requestSha256: hash,
-  cases: z.array(z.object({
-    id: idSchema,
-    status: z.enum(['unverified', 'blocked', 'observed-passed', 'observed-failed']),
-    reason: safeDetail.optional(),
-    observations: z.array(z.object({
-      stepIndex: z.number().int().min(0).max(99),
-      outcome: z.enum(['matched', 'mismatch']),
-      detail: safeDetail,
-      evidence: evidencePath,
-    }).strict()).max(100),
-  }).strict()).min(1).max(100),
+  cases: z.array(agentResultCaseSchema).min(1).max(100),
 }).strict();
 
 export type AgentHandoffRequest = z.infer<typeof agentHandoffRequestSchema>;
@@ -99,7 +104,7 @@ The registered target URL in \`request.json\` has no credentials, query, or frag
 
 For a web case, execute steps in order: \`open\` navigates to the target origin plus its app-relative path (a leading \`/\` replaces any base URL path, matching the built-in runner); if the first step is not \`open\`, start at the target origin's \`/\`. \`click\` and \`fill\` use the specified role/name, label, text, or test ID; \`act\` is a natural-language browser action within the target; \`assertVisible\` checks the requested visibility; \`assertText\` checks exact or contained text; \`assertUrl\` checks the expected URL; \`assertAgent\` requires a reasoned observation of its stated condition. If a locator, prerequisite, or expected outcome is unclear, mark that case \`blocked\` and explain why. Stop a case on the first mismatch or blocked prerequisite. Do not invent missing setup or mark a step passed from an action alone.
 
-Copy \`agent-result.template.json\` to a new \`agent-result.json\` and fill every selected case ID. Keep \`requestSha256\` unchanged. Use \`unverified\` for cases you did not inspect, \`blocked\` with a concrete reason for cases that cannot be evaluated, \`observed-passed\` only when every assertion was observed to match, and \`observed-failed\` when an assertion mismatch was observed. For each evaluated assertion, add its zero-based \`stepIndex\`, \`outcome\`, a concrete \`detail\` describing what appeared, and a file path such as \`evidence/TC-001-step-3.png\` or \`evidence/TC-001-step-3.txt\`. Create the referenced screenshot or text note under this folder's \`evidence/\` directory. Redact secrets and personal data before saving evidence. Do not claim a product defect from one observation; describe the observed mismatch and conditions.
+Copy \`agent-result.template.json\` to a new \`agent-result.json\` and fill every selected case ID. Keep \`requestSha256\` unchanged. Use \`unverified\` for cases you did not inspect: omit \`reason\` and leave \`observations\` empty. Use \`blocked\` for cases that cannot be evaluated: include a concrete \`reason\` and leave \`observations\` empty. Use \`observed-passed\` only when every assertion was observed to match, and \`observed-failed\` when an assertion mismatch was observed. For either observed status, omit \`reason\` and record the mismatch explanation in the assertion's \`detail\`. List evaluated assertions in step order; for a failure, stop after the first mismatch. For each evaluated assertion, add its zero-based \`stepIndex\`, \`outcome\`, a concrete \`detail\` describing what appeared, and a file path such as \`evidence/TC-001-step-3.png\` or \`evidence/TC-001-step-3.txt\`. Create the referenced screenshot or text note under this folder's \`evidence/\` directory. Redact secrets and personal data before saving evidence. Do not claim a product defect from one observation; describe the observed mismatch and conditions.
 
 Run \`flow-qa agent-review <this-folder> <this-folder>/agent-result.json\` on the reviewer's machine to check completeness and evidence references. The review is an agent-supplied analysis, not an engine-verified \`qa-report.json\` or proof that the agent truly executed the case.
 `;
@@ -156,14 +161,11 @@ function validateAgentResult(request: AgentHandoffRequest, result: AgentResult):
     const assertionIndexes = testCase.steps.flatMap((step, stepIndex) => assertionTypes.has(step.type) ? [stepIndex] : []);
     if (testCase.questions.length && item.status !== 'blocked' && item.status !== 'unverified') throw new Error(`Case ${item.id} has open questions and cannot be reported as observed.`);
     if (item.status === 'blocked') {
-      if (!item.reason || item.observations.length) throw new Error(`Case ${item.id} needs a block reason and no observations.`);
       continue;
     }
     if (item.status === 'unverified') {
-      if (item.reason || item.observations.length) throw new Error(`Case ${item.id} is unverified but contains findings.`);
       continue;
     }
-    if (item.reason || !item.observations.length) throw new Error(`Case ${item.id} needs assertion observations and no block reason.`);
     for (const [observationIndex, observation] of item.observations.entries()) {
       if (observation.stepIndex !== assertionIndexes[observationIndex]) throw new Error(`Case ${item.id} has an invalid, duplicate, or out-of-order assertion step index.`);
     }
@@ -217,7 +219,7 @@ export async function reviewAgentHandoff(directoryPath: string, resultPath: stri
     `Observed passed: ${counts['observed-passed']} · observed failed: ${counts['observed-failed']} · blocked: ${counts.blocked} · unverified: ${counts.unverified}`, '',
     ...result.cases.flatMap((item) => [
       `## ${safeLine(item.id)} — ${safeLine(item.status)}`,
-      ...(item.reason ? [`Reason: ${markdownLiteral(item.reason)}`] : []),
+      ...(item.status === 'blocked' ? [`Reason: ${markdownLiteral(item.reason)}`] : []),
       ...item.observations.map((observation) => `- Assertion step ${observation.stepIndex}: ${observation.outcome}; ${markdownLiteral(observation.detail)} [${observation.evidence}]`),
       '',
     ]),

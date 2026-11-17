@@ -1,5 +1,11 @@
 # Releases and verification
 
+## 0.9.2 — copied-skill installation and agent result contract
+
+An independent agent used a generated handoff to observe a real browser failure, then returned an observed-failed case with an explanatory `reason`. The exported JSON Schema allowed that field while `agent-review` already rejected it. Generated schemas and prompts now describe the existing per-status rules: observed outcomes put the explanation in assertion observations and omit the blocking reason; blocked and unverified outcomes retain their distinct reason/observation limits. The result schema version and runtime interpretation are unchanged.
+
+The portable skill also identifies the scoped npm package `@ihyeon/flow-qa` and local CLI invocation so a new project does not try to install the binary name as an unscoped package. Focused status-contract regression checks, the full 124-test check, type/UI checks, package checks, and installed-package smoke passed locally. Public package and end-to-end evidence are verified separately for this source.
+
 ## 0.9.1 — portable AI integration guidance
 
 The npm package now includes `skills/flow-qa/` with a self-contained integration skill and workflow reference, `docs/ai.md`, and `llms.txt`. A consumer can copy the whole skill folder from the installed package into a project-local agent directory, without global installation or a new model API. Instructions use the installed CLI and distinguish planning, case review, external agent observations, and native runner reports. Runtime behavior and public result formats are unchanged.
