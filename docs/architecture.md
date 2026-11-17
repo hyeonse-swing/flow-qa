@@ -7,6 +7,9 @@ flowchart LR
   A[Flow document] --> B[Planning prompt or planner model]
   B --> C[JSON case suite]
   C --> D[Schema and source-hash validation]
+  D --> J[Portable external-agent handoff]
+  J --> K[Agent-supplied observations and evidence]
+  K --> L[Structure and evidence-reference review]
   D --> E[Compile allowed steps to e2e code]
   E --> F[tester-army/e2e web or mobile run]
   F --> G[QA report with attempts and evidence]
@@ -19,6 +22,8 @@ flowchart LR
 ## Decisions at each boundary
 
 **Planning and execution are separate.** A `planner` designs cases from a flow; an `agent` is used only for `act` and `assertAgent` steps during execution. They are configured independently. Users review the generated JSON before running it, and fixed steps run without either model. Users choose model and target addresses; authentication values come from named environment variables rather than the config JSON.
+
+**The external-agent path is a separate evidence contract.** `agent-handoff` writes a validated, initially unrun web request and prompt that another coding agent can read without Flow QA or e2e. `agent-review` checks a returned result's request hash, case coverage, status consistency and local evidence references. It does not execute the suite, authenticate the agent's statements, or create a native engine report. See the [handoff guide](agent-handoff.md).
 
 **Only a defined vocabulary compiles.** The schema checks requirement references, assertions, step types, and inputs. It does not execute arbitrary code or shell commands from model output. Cases with unresolved `questions`, or steps that need an unavailable agent model, are blocked. `preconditions` describe required state; they are not an automatic setup contract.
 

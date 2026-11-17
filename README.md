@@ -16,7 +16,7 @@ Flow QA is available as a CLI and a web UI bound to `127.0.0.1`. Provide a targe
 Node.js 24.x (24.22.1 or later) or 26.12.1 or later is required. Install Chromium before the first web run:
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.9
+npm install -g @ihyeon/flow-qa@0.9.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -61,6 +61,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 For authenticated models, add `--key-env FLOW_QA_API_KEY` to the model command and provide that environment variable to the process. The config stores the variable's name, not its value. The flow is sent to the planner endpoint you chose. Natural-language browser action (`act`) and model judgment (`assertAgent`) require a **separately configured** `agent` model that supports tools and images. Fixed clicks, inputs, and assertions run without a model.
 
 `flow-qa doctor --workspace my-qa` checks local dependencies and whether configured model-key environment variables are present. It does not print key values or call the model server; a present key does not confirm remote authentication.
+
+To let an external coding agent use **its own browser tools** for an already reviewed web suite, run `flow-qa agent-handoff cases/my-flow.json --target preview --workspace my-qa`. Give the resulting private folder and its `AGENT_PROMPT.md` to the agent. It starts as `not-run`, contains a standalone JSON contract and result template, and makes no model or `e2e` call. After the agent returns observations and evidence files, use `flow-qa agent-review <folder> <result.json>` to check the response. The findings remain labeled as agent-supplied observations, separate from engine-backed reports. See the [handoff guide](docs/agent-handoff.md).
 
 ## Run selected cases
 

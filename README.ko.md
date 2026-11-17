@@ -16,7 +16,7 @@ CLI와 `127.0.0.1` 전용 웹 UI를 제공합니다. UI는 영어로 시작하�
 Node.js 24.x(24.22.1 이상) 또는 26.12.1 이상이 필요합니다. 브라우저는 첫 웹 실행 전에 설치합니다.
 
 ```sh
-npm install -g @ihyeon/flow-qa@0.8.9
+npm install -g @ihyeon/flow-qa@0.9.0
 flow-qa browser install
 flow-qa ui --demo
 ```
@@ -61,6 +61,8 @@ flow-qa plan flows/my-flow.md --workspace my-qa
 인증이 필요하면 모델 설정에 `--key-env FLOW_QA_API_KEY`를 추가하고 실행 환경에 그 값을 제공하세요. 설정 파일에는 환경 변수 이름만 저장합니다. 플로우 문서는 지정한 설계 모델 서버로 전송됩니다. 브라우저의 자연어 조작 `act` 또는 모델 판정 `assertAgent`를 쓰려면 도구 호출·이미지 입력을 지원하는 **별도** `agent` 모델 설정이 필요합니다. 고정된 클릭·입력·검증 단계는 모델 없이 실행됩니다.
 
 `flow-qa doctor --workspace my-qa`로 로컬 의존성과 모델 인증용 환경 변수의 설정 여부를 확인할 수 있습니다. 키 값은 출력하지 않고 모델 서버도 호출하지 않습니다. 환경 변수가 있어도 실제 인증 성공을 확인한 것은 아닙니다.
+
+검토한 웹 케이스를 **자체 브라우저 도구가 있는 외부 코딩 에이전트**에게 맡기려면 `flow-qa agent-handoff cases/my-flow.json --target preview --workspace my-qa`를 실행합니다. 생성된 비공개 폴더와 `AGENT_PROMPT.md`를 전달하세요. 초기 상태는 `not-run`이며, 독립적으로 읽을 수 있는 JSON 계약과 결과 양식이 들어갑니다. 묶음을 만드는 과정에서 모델이나 `e2e`를 호출하지 않습니다. 에이전트가 관찰 내용과 증거 파일을 돌려주면 `flow-qa agent-review <폴더> <result.json>`으로 형식과 참조를 검사합니다. 관찰 기록은 기존 엔진 실행 리포트와 구분합니다. 자세한 내용은 [전달 안내](docs/agent-handoff.md)에 있습니다.
 
 ## 선택한 케이스만 실행
 

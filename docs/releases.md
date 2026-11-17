@@ -1,5 +1,13 @@
 # Releases and verification
 
+## 0.9.0: hand web QA to an external agent
+
+`agent-handoff` exports a validated web suite, clean registered target, selection identity, portable prompt, JSON result schema/template, and evidence directory. The recipient uses its own browser tools without installing or invoking Flow QA or the e2e runtime. Creating the bundle opens no browser and calls no model. Source changes, unsupported mobile suites, unsafe target URLs, existing outputs, and symlinked output parents are rejected.
+
+`agent-review` validates the request hash, exact case scope, ordered assertion observations through the first mismatch, and regular evidence files inside the bundle. Unresolved cases remain blocked/unverified. Untrusted agent descriptions render as literals. The output explicitly describes external agent observations and is not imported into engine-backed reports or execution history. Evidence existence and structure do not authenticate execution. See [the handoff guide](agent-handoff.md).
+
+Validation uses unit and installed-package checks with e2e/Playwright imports blocked on this path. A separate local synthetic-app check used an external agent's existing Playwright CLI to observe a failed expectation, then a matching result after fixture repair, while retaining an unresolved case as blocked. Model APIs, customer services, and native devices were not used. Remote CI, registry consumer checks, and publication status are verified separately.
+
 The alpha entries below are historical release records. They document earlier package versions and checks.
 
 ## 0.8.9: report unavailable display-preference storage

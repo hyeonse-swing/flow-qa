@@ -4,7 +4,6 @@ import { readFile, writeFile, mkdir, access, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { chromium } from 'playwright';
 import { localeFromEnv, localized, localizeProductMessage, type Locale } from './i18n.ts';
 import { configSchema, idSchema, modelSchema, targetSchema } from './schema.ts';
 import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, writeConfig, writeJSON } from './workspace.ts';
@@ -14,6 +13,7 @@ import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-
 import { runSuite } from './engine.ts';
 import { renderMarkdown, type QAReport } from './report.ts';
 import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
+import { createAgentHandoff, reviewAgentHandoff } from './agent-handoff.ts';
 
 const help: Record<Locale, string> = {
   en: `Flow QA — turn user flows into repeatable tests and evidence-backed QA reports
@@ -32,6 +32,10 @@ Usage: flow-qa <command> [arguments] [options]
   generate <cases.json> [--out test.ts] Generate e2e test code
   run <cases.json> --target <name>     Run against a registered target and save a QA report
       [--case <id> ...]               Run only the selected case IDs (repeat --case for more)
+  agent-handoff <cases.json> --target <name> [--case <id> ...] [--out directory]
+                                      Prepare an unrun bundle for an external browser agent
+  agent-review <handoff-dir> <result.json>
+                                      Check agent-supplied findings and evidence references
   report <run-directory>              View a saved QA report
   compare <run-a> <run-b>              Compare case results
   ui [--demo] [--port 4310]           Start the local QA UI
@@ -58,6 +62,10 @@ Local example: flow-qa ui --demo
   generate <cases.json> [--out test.ts] e2e 테스트 코드 생성
   run <cases.json> --target <name>     연결한 대상에서 실행하고 QA 리포트 저장
       [--case <id> ...]               선택한 케이스만 실행 (--case를 반복해 여러 개 선택)
+  agent-handoff <cases.json> --target <name> [--case <id> ...] [--out directory]
+                                      외부 브라우저 에이전트에 전달할 미실행 묶음 준비
+  agent-review <handoff-dir> <result.json>
+                                      에이전트 관찰 결과와 증거 파일 참조 검사
   report <run-directory>              저장된 QA 리포트 보기
   compare <run-a> <run-b>             케이스별 결과 비교
   ui [--demo] [--port 4310]           로컬 QA 화면 실행
@@ -109,6 +117,7 @@ async function installedVersion(name: string, locale: Locale): Promise<string> {
 }
 async function chromiumInstalled(): Promise<boolean> {
   try {
+    const { chromium } = await import('playwright');
     const executable = chromium.executablePath();
     if (!(await stat(executable)).isFile()) return false;
     await access(executable, constants.X_OK);
@@ -138,7 +147,7 @@ export async function main(args: string[]): Promise<void> {
         (values['bundle-id'] !== undefined || values.device !== undefined) && command !== 'connect') {
       throw new Error(localized(locale, 'Platform and device options are only supported by connect and plan. See --help.', '플랫폼·기기 옵션은 connect와 plan에서만 사용할 수 있습니다. --help를 참고하세요.'));
     }
-    if (values.case !== undefined && command !== 'run' || values.demo && command !== 'ui' || values.port && command !== 'ui' ||
+    if (values.case !== undefined && command !== 'run' && command !== 'agent-handoff' || values.demo && command !== 'ui' || values.port && command !== 'ui' ||
       values['with-deps'] && (command !== 'browser' || arg !== 'install')) throw new Error(localized(locale, 'This option is not supported for the command. See --help.', '이 명령에서 사용할 수 없는 옵션입니다. --help를 참고하세요.'));
     if (command === 'ui') {
       if (arg || second) throw new Error(localized(locale, 'The ui command does not accept positional arguments.', 'ui 명령에는 위치 인자를 사용할 수 없습니다.'));
@@ -205,8 +214,14 @@ export async function main(args: string[]): Promise<void> {
       await writeJSON(output, suite, true);
       console.log(localized(locale, `Cases created: ${output}\n${suite.cases.filter((c) => c.questions.length).length} of ${suite.cases.length} cases have open questions.`, `케이스 생성: ${output}\n${suite.cases.length}개 중 확인 질문이 있는 케이스 ${suite.cases.filter((c) => c.questions.length).length}개`)); return;
     }
-    if (command === 'validate' || command === 'generate' || command === 'run') {
+    if (command === 'agent-review') {
+      const handoff = resolve(workspace, required(arg, localized(locale, 'Handoff directory', '전달 묶음 폴더'), locale));
+      const result = resolve(workspace, required(second, localized(locale, 'Agent result file', '에이전트 결과 파일'), locale));
+      console.log(await reviewAgentHandoff(handoff, result)); return;
+    }
+    if (command === 'validate' || command === 'generate' || command === 'run' || command === 'agent-handoff') {
       const suitePath = resolve(workspace, required(arg, localized(locale, 'Case file', '케이스 파일'), locale));
+      if (command === 'agent-handoff' && (await stat(suitePath)).size > 1_000_000) throw new Error('The case file must be 1 MB or smaller for an external agent handoff.');
       const suite = await readSuite(suitePath);
       await verifySuiteSource(suite, workspace);
       if (command === 'validate') {
@@ -215,6 +230,24 @@ export async function main(args: string[]): Promise<void> {
       if (command === 'generate') {
         const output = resolve(workspace, values.out ?? `generated/${suite.id}.e2e.ts`);
         await writeOutput(output, compileSuite(suite)); console.log(localized(locale, `Test script: ${output}`, `실행 스크립트: ${output}`)); return;
+      }
+      if (command === 'agent-handoff') {
+        const config = await readConfig(workspace);
+        const targetName = required(values.target, '--target', locale);
+        const target = config.targets[targetName];
+        if (!target) throw new Error(localized(locale, `Target not found: ${targetName}`, `대상을 찾지 못했습니다: ${targetName}`));
+        let caseIds: string[] | undefined;
+        try { caseIds = selectCases(suite, values.case).selection?.caseIds; }
+        catch (error) {
+          if (error instanceof CaseSelectionError) throw new Error(localizeProductMessage('Select one or more unique cases from this suite.', locale));
+          throw error;
+        }
+        const directory = await createAgentHandoff({ workspace, suite, targetName, target,
+          ...(caseIds ? { caseIds } : {}), ...(values.out ? { out: values.out } : {}) });
+        console.log(localized(locale,
+          `External agent handoff: ${directory}\nNo test has run. Review request.json and case values before sharing; give AGENT_PROMPT.md to your agent.`,
+          `외부 에이전트 전달 묶음: ${directory}\n테스트는 실행되지 않았습니다. 공유 전에 request.json과 케이스 값을 검토하고 AGENT_PROMPT.md를 에이전트에 전달하세요.`));
+        return;
       }
       const config = await readConfig(workspace);
       const targetName = values.target ?? (Object.keys(config.targets).length === 1 ? Object.keys(config.targets)[0] : undefined);

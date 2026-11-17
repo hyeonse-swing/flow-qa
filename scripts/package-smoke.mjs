@@ -56,6 +56,22 @@ try {
   assert.match(doctor, /@e2e-dev\/mobile: 0\./);
   assert.match(cli('browser', 'install', '--help'), /browser install/);
   cli('validate', 'cases/task-flow.json', '--workspace', 'workspace');
+  // The installed agent handoff and review path must not load the e2e engine or Playwright.
+  const blockedImports = path.join(temp, 'block-qa-runtime.mjs');
+  await writeFile(blockedImports, `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, nextResolve) {
+  if (/^(?:e2e|playwright|agent-device|@e2e-dev\\/)/.test(specifier)) throw new Error('Blocked runtime import: ' + specifier);
+  return nextResolve(specifier, context);
+}});\n`);
+  const handoffArgs = ['--import', blockedImports, bin];
+  const handoffOutput = command([...handoffArgs, 'agent-handoff', 'cases/task-flow.json', '--target', 'demo', '--out', 'bundle', '--workspace', 'workspace'], consumer);
+  assert.match(handoffOutput, /No test has run/);
+  const bundle = path.join(consumer, 'workspace', 'bundle');
+  const handoffRequest = JSON.parse(await readFile(path.join(bundle, 'request.json'), 'utf8'));
+  assert.equal(handoffRequest.execution, 'not-run');
+  assert.equal(handoffRequest.suite.cases.length, 3);
+  const handoffReview = command([...handoffArgs, 'agent-review', bundle, path.join(bundle, 'agent-result.template.json'), '--workspace', 'workspace'], consumer);
+  assert.match(handoffReview, /unverified: 3/);
   // Installed consumers can author mobile cases before any app or device is configured.
   cli('plan', 'flows/task-flow.md', '--platform', 'mobile', '--prompt-only', '--workspace', 'workspace');
   const mobileSuite = {
