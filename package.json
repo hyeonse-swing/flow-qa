@@ -1,6 +1,6 @@
 {
   "name": "@ihyeon/flow-qa",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "license": "MIT",
   "author": "Hyeonse Im",
   "repository": {
@@ -28,6 +28,8 @@
     "dist",
     "licenses",
     "docs/*.md",
+    "llms.txt",
+    "skills/flow-qa",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "README.ko.md"

@@ -39,6 +39,8 @@ npm run demo:smoke
 
 ## Connect your own app
 
+An AI assistant can use the packaged [Flow QA skill](skills/flow-qa/SKILL.md) and [AI guide](docs/ai.md) to review cases and choose a local run or external browser-agent handoff. With a project-local install, copy the complete folder using `mkdir -p .agents/skills && cp -R node_modules/@ihyeon/flow-qa/skills/flow-qa .agents/skills/flow-qa`; then ask your assistant to use the `flow-qa` skill for a specific flow. The copied skill includes its own reference, and the package exposes [llms.txt](llms.txt) for discovery. Use `npx --no-install flow-qa --help` with the local install.
+
 Start with a test workspace and test data: a run can click and enter text in the connected app.
 
 ```sh

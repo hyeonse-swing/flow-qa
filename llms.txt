@@ -1,0 +1,9 @@
+# Flow QA
+
+> Local CLI and UI for planning user-flow cases and recording evidence-backed QA results.
+
+- [AI assistant guide](docs/ai.md): Install the portable skill, plan and review cases, choose a runner or external agent handoff.
+- [Portable skill](skills/flow-qa/SKILL.md): Instructions that can be copied with its references into a project's `.agents/skills` directory.
+- [External agent handoff](docs/agent-handoff.md): Bundle contract and result-review limits.
+- [CLI and overview](README.md): Setup, commands, and result interpretation.
+- [한국어 안내](README.ko.md): Korean overview.

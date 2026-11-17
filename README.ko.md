@@ -39,6 +39,8 @@ npm run demo:smoke
 
 ## 내 서비스 연결
 
+AI 도우미와 사용할 때는 패키지에 포함된 [Flow QA 스킬](skills/flow-qa/SKILL.md)과 [AI 사용 안내](docs/ai.md)를 참고하세요. 프로젝트에 설치한 뒤 `mkdir -p .agents/skills && cp -R node_modules/@ihyeon/flow-qa/skills/flow-qa .agents/skills/flow-qa`로 폴더 전체를 복사하고, 도우미에게 특정 플로우에 `flow-qa` 스킬을 사용하도록 요청할 수 있습니다. 참조 파일도 함께 복사되며 [llms.txt](llms.txt)에서 안내 문서를 찾을 수 있습니다. 로컬 설치의 CLI는 `npx --no-install flow-qa --help`로 확인합니다.
+
 테스트용 작업 공간에서 시작합니다. 연결한 앱에 실제 클릭과 입력이 발생하므로 테스트 환경과 데이터를 사용하세요.
 
 ```sh

@@ -1,5 +1,11 @@
 # Releases and verification
 
+## 0.9.1 — portable AI integration guidance
+
+The npm package now includes `skills/flow-qa/` with a self-contained integration skill and workflow reference, `docs/ai.md`, and `llms.txt`. A consumer can copy the whole skill folder from the installed package into a project-local agent directory, without global installation or a new model API. Instructions use the installed CLI and distinguish planning, case review, external agent observations, and native runner reports. Runtime behavior and public result formats are unchanged.
+
+Package checks assert that the skill and references survive packing and installation. Local tarball consumer checks executed `init`, `plan --prompt-only`, `validate`, `agent-handoff`, and `agent-review` with an unverified result template; this does not claim a real external target or model run. Remote CI and registry publication are verified separately for this version.
+
 ## 0.9.0: hand web QA to an external agent
 
 `agent-handoff` exports a validated web suite, clean registered target, selection identity, portable prompt, JSON result schema/template, and evidence directory. The recipient uses its own browser tools without installing or invoking Flow QA or the e2e runtime. Creating the bundle opens no browser and calls no model. Source changes, unsupported mobile suites, unsafe target URLs, existing outputs, and symlinked output parents are rejected.

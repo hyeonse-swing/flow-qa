@@ -40,6 +40,9 @@ try {
     env: { ...process.env, PATH: `${guards}${path.delimiter}${process.env.PATH}` },
   });
   const installed = path.join(consumer, 'node_modules', '@ihyeon', 'flow-qa');
+  for (const relative of ['docs/ai.md', 'llms.txt', 'skills/flow-qa/SKILL.md', 'skills/flow-qa/references/workflow.md']) {
+    assert.ok((await stat(path.join(installed, relative))).isFile(), `Installed AI guide missing: ${relative}`);
+  }
   const bin = path.join(installed, 'dist', 'bin', 'flow-qa.mjs');
   const metadata = JSON.parse(await readFile(path.join(installed, 'package.json'), 'utf8'));
   assert.equal(metadata.name, expected.name, 'Installed package name must match this release.');
