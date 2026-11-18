@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { acquireMobileDevice, mobileReadiness, type MobileDevice } from '../src/mobile-runtime.ts';
 import { targetSchema } from '../src/schema.ts';
 
 const target = targetSchema.parse({ kind: 'mobile', platform: 'ios', bundleId: 'com.example.app', device: 'iPhone' });
 if (target.kind !== 'mobile') throw new Error('Expected mobile test target.');
+
+test('readiness and the native engine use the same agent-device daemon version', () => {
+  const flow = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const mobile = JSON.parse(readFileSync(new URL('../node_modules/@e2e-dev/mobile/package.json', import.meta.url), 'utf8'));
+  assert.equal(flow.dependencies['agent-device'], mobile.dependencies['agent-device']);
+});
 
 test('read-only readiness requires the explicitly named booted device', async () => {
   let calls = 0;

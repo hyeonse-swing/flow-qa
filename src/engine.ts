@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectCases } from './case-selection.ts';
 import { compileSuite } from './compiler.ts';
-import { acquireMobileDevice, mobileReadiness, type ListMobileDevices } from './mobile-runtime.ts';
+import { acquireMobileDevice, checkMobileApp, mobileReadiness, type CheckMobileApp, type ListMobileDevices } from './mobile-runtime.ts';
 import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type QAReport } from './report.ts';
 import { configSchema, suiteSchema, type Config, type Suite } from './schema.ts';
 import { reportTarget, targetKind, type ReportTarget } from './targets.ts';
@@ -21,6 +21,8 @@ export interface RunSuiteOptions {
   signal?: AbortSignal;
   /** @internal A read-only inventory seam for device-free tests. */
   listMobileDevices?: ListMobileDevices;
+  /** @internal A read-only installed-app seam for device-free tests. */
+  checkMobileApp?: CheckMobileApp;
 }
 
 export interface RunSuiteResult { runDir: string; report: QAReport }
@@ -224,8 +226,11 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
       else {
         sdkDevice = readiness.sdkDevice;
         releaseMobileDevice = acquireMobileDevice(selectedTarget.platform, readiness.deviceId);
+        if (!releaseMobileDevice) blockAll(executionSuite, 'Selected mobile device is in use.');
+        if (!options.signal?.aborted && await (options.checkMobileApp ?? checkMobileApp)(selectedTarget, readiness.sdkDevice) === 'missing') {
+          blockAll(executionSuite, `Selected app ${selectedTarget.bundleId} is not installed on the selected ${selectedTarget.platform === 'ios' ? 'simulator' : 'emulator'}. Install it on that device and retry.`);
+        }
       }
-      if (!releaseMobileDevice) blockAll(executionSuite, 'Selected mobile device is in use.');
     }
     const executable = runnableSuite(executionSuite, blocked);
     const testFile = path.join(runDir, TEST_FILE);

@@ -147,6 +147,29 @@ test('native config binds mobile engine and agent tools to the ready physical de
   assert.deepEqual(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
 });
 
+test('missing simulator app blocks before native execution and reports installation recovery', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const udid = '01234567-89AB-CDEF-0123-456789ABCDEF';
+  const configWithApp: Config = { ...nativeConfig, targets: {
+    phone: { kind: 'mobile', platform: 'ios', bundleId: 'com.example.missing', device: udid, description: '' },
+  } };
+  let checks = 0;
+  const options = {
+    workspace, suite: nativeSuite(), config: configWithApp, targetName: 'phone',
+    listMobileDevices: async () => [{ platform: 'ios', id: udid, name: 'QA iPhone', booted: true }],
+    checkMobileApp: async () => { checks++; return 'missing' as const; },
+  };
+  const result = await runSuite(options);
+  assert.equal(checks, 1);
+  assert.equal(result.report.status, 'blocked');
+  assert.deepEqual(result.report.cases.map(({ status, attempts }) => [status, attempts.length]), [['blocked', 0]]);
+  assert.match(result.report.cases[0]?.reason ?? '', /com\.example\.missing.*not installed.*Install it/);
+  assert.equal(existsSync(path.join(result.runDir, 'e2e.stdout.log')), false);
+  assert.equal(existsSync(path.join(result.runDir, 'raw')), false);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(result.runDir, 'qa-report.json'), 'utf8')).target,
+    { name: 'phone', kind: 'mobile', platform: 'ios', bundleId: 'com.example.missing', device: udid });
+});
+
 function selectiveSuite(): Suite {
   return { ...suite('selected'), requirements: [{ id: 'R1', text: 'Runnable' }, { id: 'R2', text: 'Unresolved' }, { id: 'R3', text: 'Agent' }],
     cases: [

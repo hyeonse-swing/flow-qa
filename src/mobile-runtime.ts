@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Target } from './schema.ts';
 
 export type MobileTarget = Extract<Target, { kind: 'mobile' }>;
@@ -13,11 +15,13 @@ export interface MobileDevice {
 
 export type ListMobileDevices = (platform: MobileTarget['platform']) => Promise<readonly MobileDevice[]>;
 export type MobileReadiness = { ready: true; deviceId: string; sdkDevice: string } | { ready: false; reason: string };
+export type CheckMobileApp = (target: MobileTarget, sdkDevice: string) => Promise<'installed' | 'missing' | 'unknown'>;
 
 const INVENTORY_TIMEOUT_MS = 10_000;
 const IOS_UDID = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
 const ANDROID_EMULATOR = /^emulator-\d+$/;
 const activeDevices = new Set<string>();
+const execFileAsync = promisify(execFile);
 
 // agent-device's --device name lookup is case-insensitive and treats _ as a space.
 const normalizedName = (value: string): string => value.replaceAll('_', ' ').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -68,6 +72,26 @@ export async function mobileReadiness(target: MobileTarget, listDevices: ListMob
   }
   return { ready: true, deviceId: selected.id, sdkDevice };
 }
+
+/** Check only virtual devices whose installed apps can be queried without launching the app. */
+export const checkMobileApp: CheckMobileApp = async (target, sdkDevice) => {
+  if (target.platform === 'ios' && IOS_UDID.test(sdkDevice)) {
+    try {
+      await execFileAsync('xcrun', ['simctl', 'get_app_container', sdkDevice, target.bundleId, 'app'], { timeout: 10_000, maxBuffer: 64 * 1024 });
+      return 'installed';
+    } catch (error) {
+      const result = error as { code?: number | string; stderr?: string };
+      return result.code === 2 && /No such file or directory/i.test(result.stderr ?? '') ? 'missing' : 'unknown';
+    }
+  }
+  if (target.platform === 'android' && ANDROID_EMULATOR.test(sdkDevice)) {
+    try {
+      const { stdout } = await execFileAsync('adb', ['-s', sdkDevice, 'shell', 'pm', 'path', target.bundleId], { timeout: 10_000, maxBuffer: 64 * 1024 });
+      return stdout.split(/\r?\n/).some((line) => line.startsWith('package:')) ? 'installed' : stdout.trim() === '' ? 'missing' : 'unknown';
+    } catch { return 'unknown'; }
+  }
+  return 'unknown';
+};
 
 /** Avoid simultaneous runs on the same device within this process. */
 export function acquireMobileDevice(platform: MobileTarget['platform'], deviceId: string): (() => void) | undefined {

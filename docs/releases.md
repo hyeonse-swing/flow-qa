@@ -1,5 +1,13 @@
 # Releases and verification
 
+## 0.9.8 — block a native run when the selected simulator lacks the app
+
+Before launching a test on a booted iOS simulator or Android emulator, Flow QA checks whether the registered app ID is installed. A confirmed missing app now produces a blocked report with zero attempts and an installation instruction. It no longer appears as an engine error after a failed launch. When the local query cannot confirm installation, the native engine still decides the result; physical device behavior is unchanged. No app is installed by this check.
+
+The direct `agent-device` dependency matches the version used by `@e2e-dev/mobile` (0.21.35). Previously, the first native run replaced the 0.21.22 readiness daemon with 0.21.35 and the next run could be blocked by a version conflict. A regression check keeps the two declared versions aligned.
+
+On 2026-11-18, an iOS 18.6 simulator launched its installed Settings app and passed the Korean title assertion twice in the same local daemon state. A missing bundle returned a blocked report with no native process or test attempt. The fresh tarball consumer repeated the blocked and passing cases. The local 135-test check, package check, and package smoke passed. Android, physical devices, and a published npm version were not tested in this local verification.
+
 ## 0.9.7 — reopen archived reports and compare repeated web runs
 
 The CLI and local UI render archived normalized reports in both English and Korean. A passing run saved by an older release now reads consistently in either language. The original Markdown snapshot stays available on disk.
