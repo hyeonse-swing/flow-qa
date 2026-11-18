@@ -1,5 +1,11 @@
 # Releases and verification
 
+## 0.9.3 — show reviewed expectations in external observations
+
+The `agent-review` summary now pairs each reported assertion with the case's reviewed expectation and locator, the external agent's observed detail, and its evidence path. The case title appears above its observations. This makes a failed observation identifiable from the summary without finding the matching step in `request.json`. Untrusted text is rendered as Markdown code spans with enough backticks to preserve literal values, including pipes, angle brackets, and backticks; line breaks and control characters are displayed as escapes. The handoff and result JSON contracts and their validation rules are unchanged.
+
+The 2026-11-18 follow-up finding and sharing guidance are recorded in the [handoff guide](agent-handoff.md). On Node.js 24.22.1, `npm run check` passed 124 tests, type checking and UI checks; `npm run check:package` passed for an 83-file tarball; and `npm run smoke:package` installed that tarball and passed its browser and synthetic agent-result checks. The compiled CLI also reviewed the existing independent agent's recorded failed and passing handoffs from 2026-11-17, showing the reviewed expectation beside each observation. These checks used local fixtures and existing evidence. Registry publication and remote CI are verified after the main push.
+
 ## 0.9.2 — copied-skill installation and agent result contract
 
 An independent agent used a generated handoff to observe a real browser failure, then returned an observed-failed case with an explanatory `reason`. The exported JSON Schema allowed that field while `agent-review` already rejected it. Generated schemas and prompts now describe the existing per-status rules: observed outcomes put the explanation in assertion observations and omit the blocking reason; blocked and unverified outcomes retain their distinct reason/observation limits. The result schema version and runtime interpretation are unchanged.

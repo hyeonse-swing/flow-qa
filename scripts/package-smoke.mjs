@@ -75,6 +75,17 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   assert.equal(handoffRequest.suite.cases.length, 3);
   const handoffReview = command([...handoffArgs, 'agent-review', bundle, path.join(bundle, 'agent-result.template.json'), '--workspace', 'workspace'], consumer);
   assert.match(handoffReview, /unverified: 3/);
+  const agentResult = JSON.parse(await readFile(path.join(bundle, 'agent-result.template.json'), 'utf8'));
+  agentResult.cases[0] = { id: 'TC-001', status: 'observed-failed', observations: [
+    { stepIndex: 3, outcome: 'mismatch', detail: 'The synthetic package check found no task in the list.', evidence: 'evidence/package-smoke.txt' },
+  ] };
+  await writeFile(path.join(bundle, 'evidence', 'package-smoke.txt'), 'Synthetic observation for installed-package report formatting.');
+  const agentResultFile = path.join(bundle, 'agent-result.json');
+  await writeFile(agentResultFile, JSON.stringify(agentResult));
+  const observedReview = command([...handoffArgs, 'agent-review', bundle, agentResultFile, '--workspace', 'workspace'], consumer);
+  assert.match(observedReview, /Observed passed: 0 · observed failed: 1 · blocked: 0 · unverified: 2/);
+  assert.match(observedReview, /Assertion step 3: mismatch\n  - Expected: text containing `First QA run` at testId `task-list`/);
+  assert.match(observedReview, /Observed: `The synthetic package check found no task in the list\.`/);
   // Installed consumers can author mobile cases before any app or device is configured.
   cli('plan', 'flows/task-flow.md', '--platform', 'mobile', '--prompt-only', '--workspace', 'workspace');
   const mobileSuite = {

@@ -82,6 +82,9 @@ registerHooks({ resolve(specifier, context, nextResolve) {
     assert.match(review.stdout, /External agent QA observations/);
     assert.match(review.stdout, /execution and authenticity were not verified/);
     assert.match(review.stdout, /Observed passed: 1/);
+    assert.match(review.stdout, /Expected: text containing `First QA run` at testId `task-list`/);
+    assert.match(review.stdout, /Observed: `The task list displayed First QA run after Add\.`/);
+    assert.match(review.stdout, /Evidence: `evidence\/TC-001-step-3\.txt`/);
     assert.doesNotMatch(review.stdout, /secret-model/);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
@@ -132,6 +135,11 @@ test('agent review rejects missing or linked evidence, traversal, mismatched has
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', workspace]);
   try {
     await qa('init');
+    const suiteFile = join(workspace, 'cases/task-flow.json');
+    const suite = JSON.parse(await readFile(suiteFile, 'utf8'));
+    suite.cases[0].title = '`<img src=x> | title`';
+    suite.cases[0].steps[3].expected = 'A | B, total < 5, `code` rendered';
+    await writeFile(suiteFile, JSON.stringify(suite));
     await qa('agent-handoff', 'cases/task-flow.json', '--target', 'demo', '--case', 'TC-001', '--out', 'bundle');
     const directory = join(workspace, 'bundle');
     const result = JSON.parse(await readFile(join(directory, 'agent-result.template.json'), 'utf8'));
@@ -147,11 +155,18 @@ test('agent review rejects missing or linked evidence, traversal, mismatched has
     await assert.rejects(review(), /linked/);
     await rm(join(directory, 'evidence', 'proof.txt'));
     await writeFile(join(directory, 'evidence', 'proof.txt'), 'Observed task text');
-    assert.match(await review(), /Observed passed: 1/);
+    const summary = await review();
+    assert.match(summary, /Observed passed: 1/);
+    assert.match(summary, /Case: `` `<img src=x> \| title` ``/);
+    assert.match(summary, /Expected: text containing ``A \| B, total < 5, `code` rendered`` at testId `task-list`/);
+    assert.doesNotMatch(summary, /&lt;img|&#96;/);
     result.cases[0].observations[0].detail = '![pixel](https://attacker.example/pixel) <img src=x> `escape`';
     const escapedSummary = await review();
-    assert.match(escapedSummary, /; `!\[pixel\]\(https:\/\/attacker\.example\/pixel\) &lt;img src=x&gt; &#96;escape&#96;` \[evidence\/proof\.txt\]/);
-    assert.doesNotMatch(escapedSummary, /<img src=x>/);
+    assert.match(escapedSummary, /Observed: `` !\[pixel\]\(https:\/\/attacker\.example\/pixel\) <img src=x> `escape` ``/);
+    result.cases[0].observations[0].detail = 'Line one\nline two, literal \\n';
+    const visibleControls = await review();
+    assert.match(visibleControls, /Observed: `Line one\\nline two, literal \\\\n`/);
+    assert.doesNotMatch(visibleControls, /Observed: `Line one\nline two/);
     result.cases[0].observations[0].detail = 'A task was visible in the list.';
     result.cases[0].observations[0].evidence = 'evidence/../outside.txt';
     await assert.rejects(review(), /invalid_string|Invalid string|regular expression/i);
@@ -188,7 +203,11 @@ test('a failed analysis observes assertion steps in order and stops at the first
     result.cases[0].observations = [observe(5, 'mismatch'), observe(7, 'matched')];
     await assert.rejects(review(), /first mismatch/);
     result.cases[0].observations = [observe(5, 'matched'), observe(7, 'mismatch')];
-    assert.match(await review(), /observed failed: 1/);
+    const failure = await review();
+    assert.match(failure, /observed failed: 1/);
+    assert.match(failure, /Assertion step 5: matched\n  - Expected: hidden at text `Task to complete`/);
+    assert.match(failure, /Assertion step 7: mismatch\n  - Expected: visible at text `Task to complete`/);
+    assert.doesNotMatch(failure, /Assertion step 8:/);
     result.cases[0].reason = 'The first completion assertion mismatched after the action.';
     assert.equal(agentResultSchema.safeParse(result).success, false);
     await assert.rejects(review(), /unrecognized_keys|Unrecognized key/i);
@@ -227,6 +246,6 @@ test('unanswered questions stay blocked in external agent review', async () => {
     await writeFile(resultFile, JSON.stringify(result));
     const summary = await reviewAgentHandoff(directory, resultFile);
     assert.match(summary, /blocked: 1/);
-    assert.match(summary, /Reason: `!\[pixel\]\(https:\/\/attacker\.example\/pixel\) &#96;Test account unknown&#96;`/);
+    assert.match(summary, /Reason: `` !\[pixel\]\(https:\/\/attacker\.example\/pixel\) `Test account unknown` ``/);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });

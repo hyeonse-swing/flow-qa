@@ -3,7 +3,7 @@ import { lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promise
 import path from 'node:path';
 import { z } from 'zod';
 import { selectCases } from './case-selection.ts';
-import { idSchema, suiteSchema, targetSchema, type Suite, type Target } from './schema.ts';
+import { idSchema, suiteSchema, targetSchema, type Locator, type Step, type Suite, type Target } from './schema.ts';
 import { targetFingerprint } from './targets.ts';
 import { sha256 } from './workspace.ts';
 
@@ -180,9 +180,31 @@ function safeLine(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f|]/g, ' ').slice(0, 2000);
 }
 
-function markdownLiteral(value: string): string {
-  const escaped = safeLine(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/`/g, '&#96;');
-  return `\`${escaped}\``;
+function markdownLiteral(value: string, limit = 2000): string {
+  const visible = value.slice(0, limit).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\\]/g, (character) => {
+    if (character === '\\') return '\\\\';
+    if (character === '\n') return '\\n';
+    if (character === '\r') return '\\r';
+    if (character === '\t') return '\\t';
+    return `\\u${character.codePointAt(0)!.toString(16).padStart(4, '0')}`;
+  });
+  const longestRun = Math.max(0, ...(visible.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longestRun + 1);
+  const content = visible.startsWith('`') || visible.endsWith('`') ? ` ${visible} ` : visible;
+  return `${fence}${content}${fence}`;
+}
+
+function expectedLocator(locator: Locator): string {
+  if (locator.by === 'role') return `role ${markdownLiteral(locator.value)}${locator.name ? ` named ${markdownLiteral(locator.name, 8192)}` : ''}`;
+  return `${locator.by} ${markdownLiteral(locator.value, 8192)}`;
+}
+
+function expectedAssertion(step: Step): string {
+  if (step.type === 'assertVisible') return `${step.visible ? 'visible' : 'hidden'} at ${expectedLocator(step.locator)}`;
+  if (step.type === 'assertText') return `text ${step.match === 'equals' ? 'equal to' : 'containing'} ${markdownLiteral(step.expected, 8192)} at ${expectedLocator(step.locator)}`;
+  if (step.type === 'assertUrl') return `URL ${markdownLiteral(step.expected, 8192)}`;
+  if (step.type === 'assertAgent') return `condition ${markdownLiteral(step.instruction, 8192)}`;
+  throw new Error('Agent result refers to a non-assertion step.');
 }
 
 export async function reviewAgentHandoff(directoryPath: string, resultPath: string): Promise<string> {
@@ -217,12 +239,21 @@ export async function reviewAgentHandoff(directoryPath: string, resultPath: stri
     'These findings were supplied by an external agent. File references and structure were checked; execution and authenticity were not verified by Flow QA.', '',
     `Suite: ${safeLine(request.suite.id)} · target: ${safeLine(request.target.name)} · ${result.cases.length} selected case(s)`,
     `Observed passed: ${counts['observed-passed']} · observed failed: ${counts['observed-failed']} · blocked: ${counts.blocked} · unverified: ${counts.unverified}`, '',
-    ...result.cases.flatMap((item) => [
-      `## ${safeLine(item.id)} — ${safeLine(item.status)}`,
-      ...(item.status === 'blocked' ? [`Reason: ${markdownLiteral(item.reason)}`] : []),
-      ...item.observations.map((observation) => `- Assertion step ${observation.stepIndex}: ${observation.outcome}; ${markdownLiteral(observation.detail)} [${observation.evidence}]`),
-      '',
-    ]),
+    ...result.cases.flatMap((item, index) => {
+      const testCase = request.suite.cases[index]!;
+      return [
+        `## ${safeLine(item.id)} — ${safeLine(item.status)}`,
+        `Case: ${markdownLiteral(testCase.title, 8192)}`,
+        ...(item.status === 'blocked' ? [`Reason: ${markdownLiteral(item.reason)}`] : []),
+        ...item.observations.flatMap((observation) => [
+          `- Assertion step ${observation.stepIndex}: ${observation.outcome}`,
+          `  - Expected: ${expectedAssertion(testCase.steps[observation.stepIndex]!)}`,
+          `  - Observed: ${markdownLiteral(observation.detail)}`,
+          `  - Evidence: ${markdownLiteral(observation.evidence)}`,
+        ]),
+        '',
+      ];
+    }),
   ];
   return `${lines.join('\n')}\n`;
 }
