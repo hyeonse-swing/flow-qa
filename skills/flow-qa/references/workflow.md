@@ -1,6 +1,6 @@
 # Flow QA CLI workflow
 
-Install `@ihyeon/flow-qa` in the project with `npm install --save-dev @ihyeon/flow-qa` if needed. Run the local CLI with `npx --no-install flow-qa`; prefix each example below with `npx --no-install` when using a project-local install. Run `npx --no-install flow-qa --help` to inspect the installed version. Paths to flows and cases below are relative to `--workspace`; `flow-qa init my-qa` creates a local example and configuration without replacing existing files.
+Install `@ihyeon/flow-qa` in the project with `npm install --save-dev @ihyeon/flow-qa` if needed. Run the local CLI with `npx --no-install flow-qa`; prefix each example below with `npx --no-install` when using a project-local install. Run `npm ls @ihyeon/flow-qa --depth=0` in the project to see the installed version. Use `npx --no-install flow-qa --help` to list commands. Paths to flows and cases below are relative to `--workspace`; `flow-qa init my-qa` creates a local example and configuration without replacing existing files.
 
 ## Design and review
 

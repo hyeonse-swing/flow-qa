@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.9.5 — identify the installed CLI version
+
+The packaged skill now uses `npm ls @ihyeon/flow-qa --depth=0` to check the project’s installed version. The CLI’s `--help` lists available commands.
+
 ## 0.9.4 — show partial external review scope
 
 When a handoff selects a subset with `--case`, `agent-review` now prints the selected count against the original suite count and explicitly labels cases outside the handoff as unevaluated. A selected case's `observed-passed` result remains an observation about that case only. The reviewer also rejects inconsistent selection totals in a handoff request. Existing request and result JSON shapes are unchanged. A three-case local suite reproduced the previous ambiguous summary with one selected case before this fix. The same saved request and result now show the two unevaluated cases. Local Node.js 24.22.1 checks passed 125 tests, type checking, UI checks, the package audit, and a fresh installed-package smoke that covers both full and selected handoffs.
