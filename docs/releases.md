@@ -1,5 +1,11 @@
 # Releases and verification
 
+## 0.9.7 — reopen archived reports and compare repeated web runs
+
+The CLI and local UI render archived normalized reports in both English and Korean. A passing run saved by an older release now reads consistently in either language. The original Markdown snapshot stays available on disk.
+
+Web target registration and run comparisons recognize a bare origin and the same origin with a single final slash. Re-registering an existing target preserves its original URL spelling. Mobile targets and URL paths retain their existing identity. The packaged skill also shows how to use the full accessible name of a link in a browser case.
+
 ## 0.9.6 — show diagnosis guidance only for nonpassing runs
 
 Passing Markdown reports no longer include the generic **Possible causes** section or its Korean failure wording. Failed, blocked, interrupted, and error reports retain the existing guidance; report JSON and other Markdown sections are unchanged. A focused regression checks passing and failed reports in English and Korean. Re-rendering the saved healthy and assertion-failure reports confirmed that only the healthy report loses the footer; the failed report remains byte-for-byte identical.

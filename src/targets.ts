@@ -22,6 +22,28 @@ export function targetFingerprint(target: Target | ReportTarget): string {
   return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
 }
 
+// Keep the original authority spelling so only the optional root slash compares equal.
+function rootAuthority(url: string): string | undefined {
+  return /^(https?:\/\/[^/?#@\\\s]+)\/?$/i.exec(url)?.[1];
+}
+
+export function sameReportTarget(left: ReportTarget, right: ReportTarget): boolean {
+  if (targetFingerprint(left) === targetFingerprint(right)) return true;
+  if (left.kind === 'mobile' || right.kind === 'mobile' || typeof left.url !== 'string' || typeof right.url !== 'string') return false;
+  const authority = rootAuthority(left.url);
+  return authority !== undefined && authority === rootAuthority(right.url);
+}
+
+export function registrationTarget(target: Target, previous?: Target): Target {
+  if (target.kind === 'mobile') return target;
+  const authority = rootAuthority(target.url);
+  if (!authority) return target;
+  if (previous && previous.kind !== 'mobile' && rootAuthority(previous.url) === authority) {
+    return { ...target, url: previous.url };
+  }
+  return { ...target, url: authority };
+}
+
 export function reportTarget(name: string, target: Target): ReportTarget {
   return target.kind === 'mobile'
     ? { name, kind: 'mobile', platform: target.platform, bundleId: target.bundleId, device: target.device }

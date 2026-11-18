@@ -1,9 +1,10 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import { expectedChecks } from './compiler.ts';
 import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import { localized, localizeProductMessage, type Locale } from './i18n.ts';
-import type { Suite } from './schema.ts';
+import { idSchema, type Suite } from './schema.ts';
 import { targetLabel, type ReportTarget } from './targets.ts';
 
 export type QAStatus = 'passed' | 'failed' | 'blocked' | 'error' | 'interrupted';
@@ -62,6 +63,65 @@ export interface QAReport {
   errors: string[];
   selection?: RunSelection;
   usage?: { modelTokens: number; modelCachedTokens?: number; estimatedCostUsd?: number };
+}
+
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const archiveEnvelopeSchema = z.object({
+  schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
+  suiteHash: z.string(), target: z.union([
+    z.object({ name: z.string(), url: z.string() }),
+    z.object({ name: z.string(), kind: z.literal('mobile'), platform: z.enum(['ios', 'android']), bundleId: z.string(), device: z.string() }),
+  ]),
+  startedAt: z.string(), finishedAt: z.string(), status: z.enum(['passed', 'failed', 'blocked', 'error', 'interrupted']),
+  cases: z.array(z.object({ id: z.string(), title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
+    expected: z.array(z.string()), attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
+  errors: z.array(z.string()), usage: z.object({ modelTokens: z.number(), modelCachedTokens: z.number().optional(), estimatedCostUsd: z.number().optional() }).optional(),
+  selection: z.unknown().optional(),
+}).passthrough();
+
+/** The original UI metadata contract accepts older reports with incomplete attempt details. */
+export function parseArchivedReportEnvelope(raw: unknown): QAReport | undefined {
+  const parsed = archiveEnvelopeSchema.safeParse(raw);
+  return parsed.success && isReportSelectionValid(parsed.data.cases, parsed.data.selection) ? parsed.data as QAReport : undefined;
+}
+
+const savedErrorSchema = z.object({ code: z.string(), message: z.string(), category: z.enum(['test', 'configuration', 'infrastructure', 'internal', 'interrupted']).optional() });
+const savedAttemptSchema = z.object({
+  index: z.number().int().nonnegative(), status: z.enum(['passed', 'failed', 'timed-out', 'interrupted', 'skipped']),
+  startedAt: z.string(), durationMs: z.number().finite().nonnegative(),
+  error: savedErrorSchema.optional(), secondaryErrors: z.array(savedErrorSchema),
+  steps: z.array(z.object({ api: z.string(), label: z.string(), status: z.string() })),
+  artifacts: z.array(z.object({ kind: z.string(), redaction: z.enum(['complete', 'not-required', 'incomplete']), path: z.string().optional() })),
+});
+const savedReportSchema = z.object({
+  ...archiveEnvelopeSchema.shape,
+  suiteHash: z.string().regex(/^[a-f0-9]{64}$/),
+  cases: z.array(z.object({
+    id: idSchema, title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
+    expected: z.array(z.string()), reason: z.string().optional(),
+    attempts: z.array(savedAttemptSchema),
+  })),
+  usage: z.object({ modelTokens: z.number().finite().nonnegative(), modelCachedTokens: z.number().finite().nonnegative().optional(), estimatedCostUsd: z.number().finite().nonnegative().optional() }).optional(),
+});
+
+/** Shared archive gate for the CLI and local UI. Inspect the original object so extra selection keys cannot be stripped. */
+export function isSavedReport(raw: unknown): raw is QAReport {
+  if (!savedReportSchema.safeParse(raw).success) return false;
+  const report = raw as QAReport;
+  if (!isReportSelectionValid(report.cases, report.selection)) return false;
+  for (const item of report.cases) {
+    if (item.status === 'passed' && (item.attempts.length !== 1 || item.attempts[0]?.index !== 0 || item.attempts[0]?.status !== 'passed')) return false;
+    if (item.status === 'flaky' && (item.attempts.length < 2 || item.attempts.at(-1)?.status !== 'passed'
+      || item.attempts.some((attempt, index) => attempt.index !== index || (index < item.attempts.length - 1 && !['failed', 'timed-out'].includes(attempt.status))))) return false;
+  }
+  return report.status !== 'passed' || (report.errors.length === 0 && report.cases.length > 0 && report.cases.every((item) => item.status === 'passed'));
+}
+
+/** Prefer the normalized result for either language; keep older saved Markdown when it cannot be rendered. */
+export function renderSavedMarkdown(raw: unknown, savedMarkdown: string, locale: Locale): string {
+  if (!isSavedReport(raw)) return savedMarkdown;
+  try { return renderMarkdown(raw, locale); }
+  catch { return savedMarkdown; }
 }
 
 export interface ReportContext {

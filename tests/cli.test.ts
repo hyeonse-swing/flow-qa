@@ -7,9 +7,74 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { playwrightInstallInvocation } from '../src/cli.ts';
+import { normalizeReport1 } from '../src/report.ts';
+import type { Suite } from '../src/schema.ts';
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL('../bin/flow-qa.mjs', import.meta.url));
+test('CLI connect canonicalizes new roots but retains old root spelling on re-registration', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-root-cli-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
+  const saved = async (name: string) => JSON.parse(await readFile(join(dir, 'flowqa.config.json'), 'utf8')).targets[name];
+  try {
+    await qa('init');
+    await qa('connect', 'fresh', '--url', 'http://127.0.0.1:43982/');
+    assert.equal((await saved('fresh')).url, 'http://127.0.0.1:43982');
+    const configFile = join(dir, 'flowqa.config.json');
+    const config = JSON.parse(await readFile(configFile, 'utf8'));
+    config.targets.legacy = { url: 'http://127.0.0.1:43982/', description: 'Old label' };
+    await writeFile(configFile, JSON.stringify(config));
+    await qa('connect', 'legacy', '--url', 'http://127.0.0.1:43982');
+    assert.equal((await saved('legacy')).url, 'http://127.0.0.1:43982/');
+    await qa('connect', 'legacy', '--url', 'http://127.0.0.1:43982/path/');
+    assert.equal((await saved('legacy')).url, 'http://127.0.0.1:43982/path/');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('saved report renders normalized results in both languages and preserves older Markdown', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-saved-report-'));
+  const run = join(dir, 'run');
+  const qa = (lang: string) => exec(process.execPath, [bin, 'report', run, '--lang', lang]);
+  try {
+    await mkdir(run);
+    const saved = '# Older saved report\n\n## Possible causes\n';
+    await writeFile(join(run, 'qa-report.md'), saved);
+    assert.equal((await qa('en')).stdout.trim(), saved.trim(), 'Markdown-only archive remains readable');
+    const at = '2026-11-18T00:00:00.000Z';
+    const suite: Suite = { schemaVersion: 'flow-qa/suite-1', id: 'suite', title: 'Suite', requirements: [{ id: 'R1', text: 'Visible' }],
+      cases: [{ id: 'A', title: 'Healthy', requirementIds: ['R1'], preconditions: [], questions: [], steps: [{ type: 'assertUrl', expected: 'https://example.test/' }] }] };
+    const report = normalizeReport1({ schemaVersion: 'report-1', run: {
+      id: '0192f3a0-0000-7000-8000-000000000000', specVersion: '0.1', runner: { name: 'e2e', version: '0.22.0' },
+      status: 'passed', exitCode: 0, startedAt: at, finishedAt: at, project: { id: 'suite' }, targets: [{ id: 'preview' }],
+      results: [{ titlePath: ['[A] Healthy'], file: 'suite.e2e.ts', targetId: 'preview', kind: 'test', selected: true, status: 'passed',
+        attempts: [{ index: 0, status: 'passed', startedAt: at, durationMs: 1, secondaryErrors: [], steps: [], artifacts: [] }] }],
+      errors: [], summary: {}, usage: { modelTokens: 0 },
+    } }, { suite, runId: '666ecb72-0b3d-41d2-8cc8-a13917b23226', suiteHash: 'a'.repeat(64),
+      target: { name: 'preview', url: 'https://example.test' }, startedAt: at, finishedAt: at, rawDir: dir,
+      testFile: join(dir, 'suite.e2e.ts'), blockedReasons: new Map() });
+    await writeFile(join(run, 'qa-report.json'), JSON.stringify(report));
+    for (const [lang, heading] of [['en', 'QA results'], ['ko', 'QA 결과']]) {
+      const output = (await qa(lang!)).stdout;
+      assert.match(output, new RegExp(heading!));
+      assert.doesNotMatch(output, /Possible causes|가능한 원인|Older saved report/);
+    }
+    await writeFile(join(run, 'qa-report.json'), '{malformed');
+    assert.equal((await qa('en')).stdout.trim(), saved.trim());
+    await writeFile(join(run, 'qa-report.json'), JSON.stringify({ schemaVersion: 'flow-qa/report-1', status: 'passed' }));
+    assert.equal((await qa('ko')).stdout.trim(), saved.trim());
+    for (const invalid of [
+      { ...report, suiteHash: undefined }, { ...report, suiteHash: 'bad' },
+      { ...report, status: 'passed', errors: ['Runtime failed'] },
+      { ...report, cases: [{ ...report.cases[0], status: 'failed' }] },
+      { ...report, cases: [{ ...report.cases[0], attempts: [] }] },
+      { ...report, cases: [{ ...report.cases[0], attempts: [{ ...report.cases[0]!.attempts[0], status: 'failed' }] }] },
+      { ...report, selection: { caseIds: ['A'], totalCases: 2, ignored: true } },
+    ]) {
+      await writeFile(join(run, 'qa-report.json'), JSON.stringify(invalid));
+      assert.equal((await qa('en')).stdout.trim(), saved.trim());
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('CLI selects repeated case IDs without executing or hiding unselected cases as passes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-select-cli-'));
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
@@ -232,5 +297,19 @@ test('CLI report comparison distinguishes mobile device and app identities', asy
     }
     assert.match((await qa('compare', 'before', 'same')).stdout, /Comparing the same suite, target and case selection/);
     for (const changed of ['device', 'app']) assert.match((await qa('compare', 'before', changed)).stdout, /Suite, target or case selection differs/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('CLI compares archived reports whose bare roots differ only by one slash', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-root-compare-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
+  const report = { suiteHash: 'a'.repeat(64), suiteId: 'suite', cases: [{ id: 'C1', status: 'passed' }] };
+  try {
+    for (const [name, url] of [['before', 'http://127.0.0.1:43982'], ['after', 'http://127.0.0.1:43982/'], ['other', 'http://127.0.0.1:43982//']]) {
+      await mkdir(join(dir, name!));
+      await writeFile(join(dir, name!, 'qa-report.json'), JSON.stringify({ ...report, target: { name: 'site', url } }));
+    }
+    assert.match((await qa('compare', 'before', 'after')).stdout, /Comparing the same suite, target and case selection/);
+    assert.match((await qa('compare', 'before', 'other')).stdout, /Suite, target or case selection differs/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

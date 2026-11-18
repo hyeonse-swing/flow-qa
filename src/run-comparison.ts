@@ -1,7 +1,7 @@
 import { localized, type Locale } from './i18n.ts';
 import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import type { QACase, QACaseStatus, QAReport, QAStatus } from './report.ts';
-import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
+import { sameReportTarget, targetLabel, type ReportTarget } from './targets.ts';
 
 export const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'] as const;
 export type ComparisonCategory = (typeof comparisonCategories)[number];
@@ -87,7 +87,7 @@ function category(baseline: QACase | undefined, current: QACase | undefined): Co
 export function compareReports(baseline: QAReport, current: QAReport): RunComparison {
   if (baseline.runId === current.runId) throw new ComparisonError(400, 'A comparison needs two different runs.');
   if (baseline.suiteId !== current.suiteId) throw new ComparisonError(409, 'Both reports must belong to the same suite.');
-  if (targetFingerprint(baseline.target) !== targetFingerprint(current.target)) {
+  if (!sameReportTarget(baseline.target, current.target)) {
     throw new ComparisonError(409, 'Both reports must use the same target.');
   }
   if (!baseline.suiteHash.trim() || !current.suiteHash.trim()) {

@@ -13,10 +13,10 @@ import { runSuite, type RunSuiteOptions, type RunSuiteResult } from '../engine.t
 import { localeFromAcceptLanguage, localizeProductMessage, type Locale } from '../i18n.ts';
 import { EvidenceError, readEvidence } from './evidence.ts';
 import { buildPlanningPrompt, planFlow, PlannerError } from '../planner.ts';
-import { renderMarkdown, type QAReport } from '../report.ts';
+import { parseArchivedReportEnvelope, renderSavedMarkdown, type QAReport } from '../report.ts';
 import { compareReports, ComparisonError, renderComparisonMarkdown } from '../run-comparison.ts';
 import { configSchema, idSchema, modelSchema, suiteSchema, targetSchema, type Config, type PlannerConnection, type Suite } from '../schema.ts';
-import { targetFingerprint } from '../targets.ts';
+import { registrationTarget, targetFingerprint } from '../targets.ts';
 import { CONFIG_FILE, sha256 } from '../workspace.ts';
 
 const MAX_BODY = 256 * 1024;
@@ -40,18 +40,6 @@ type RunCandidate = { id: string; mtime: number };
 type RunSummary = { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
   caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] };
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
-const reportEnvelope = z.object({
-  schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
-  suiteHash: z.string(), target: z.union([
-    z.object({ name: z.string(), url: z.string() }),
-    z.object({ name: z.string(), kind: z.literal('mobile'), platform: z.enum(['ios', 'android']), bundleId: z.string(), device: z.string() }),
-  ]),
-  startedAt: z.string(), finishedAt: z.string(), status: z.enum(['passed', 'failed', 'blocked', 'error', 'interrupted']),
-  cases: z.array(z.object({ id: z.string(), title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
-    expected: z.array(z.string()), attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
-  errors: z.array(z.string()), usage: z.object({ modelTokens: z.number(), modelCachedTokens: z.number().optional(), estimatedCostUsd: z.number().optional() }).optional(),
-  selection: z.unknown().optional(),
-}).passthrough().refine((report) => isReportSelectionValid(report.cases, report.selection));
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: path.join(PUBLIC_DIR, 'index.html'), type: 'text/html; charset=utf-8' },
@@ -347,14 +335,10 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
   }
   async function report(runId: string, includeMarkdown: boolean, locale: Locale = 'en'): Promise<{ report: QAReport; markdown?: string }> {
     const dir = await runDirectory(runId);
-    const parsed = reportEnvelope.safeParse(jsonObject(await readRegular(dir, 'qa-report.json', MAX_REPORT)));
-    if (!parsed.success || parsed.data.runId !== runId) notFound();
-    const raw = parsed.data as QAReport;
+    const raw = parseArchivedReportEnvelope(jsonObject(await readRegular(dir, 'qa-report.json', MAX_REPORT)));
+    if (!raw || raw.runId !== runId) notFound();
     let markdown = includeMarkdown ? await readRegular(dir, 'qa-report.md', MAX_REPORT) : undefined;
-    if (markdown !== undefined && locale === 'ko') {
-      try { markdown = renderMarkdown(raw, locale); }
-      catch { /* Preserve the saved report when an older or malformed JSON report cannot be rendered. */ }
-    }
+    if (markdown !== undefined) markdown = renderSavedMarkdown(raw, markdown, locale);
     return { report: raw as QAReport, ...(markdown === undefined ? {} : { markdown }) };
   }
   async function runCandidates(): Promise<RunCandidate[]> {
@@ -690,7 +674,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         ]), body);
         const target = parse(targetSchema, input);
         const settings = await config();
-        settings.targets[name] = target;
+        settings.targets[name] = registrationTarget(target, settings.targets[name]);
         await updateConfig(settings);
       });
       sendJSON(response, 200, { ok: true }); return;

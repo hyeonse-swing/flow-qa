@@ -91,6 +91,16 @@ test('comparison gates same run, different suite/target, empty hashes, and dupli
   rejection(() => compareReports(baseline, { ...current, cases: [{ ...current.cases[0]!, id: ' \t' }] }), 409, /case IDs/);
 });
 
+test('archived root URL spellings compare while other web identities stay distinct', () => {
+  const baseline = report('baseline');
+  const current = report('current');
+  current.target = { name: 'renamed', url: 'http://127.0.0.1:3000/' };
+  assert.deepEqual(compareReports(baseline, current).current.target, current.target);
+  for (const url of ['http://127.0.0.1:3000//', 'http://127.0.0.1:3000/path', 'http://127.0.0.1:3001/', 'http://LOCALHOST:3000/']) {
+    rejection(() => compareReports(baseline, { ...current, target: { name: 'renamed', url } }), 409, /same target/);
+  }
+});
+
 test('comparison is deterministic, does not mutate reports, and does not retain mutable inputs', () => {
   const baseline = report('baseline');
   const current = report('current');

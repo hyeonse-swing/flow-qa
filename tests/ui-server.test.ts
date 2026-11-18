@@ -17,6 +17,7 @@ import type { Config, Suite } from '../src/schema.ts';
 import { startUIServer, type UIServerHandle } from '../src/ui/server.ts';
 import { initWorkspace, readConfig, readSuite, sha256 } from '../src/workspace.ts';
 
+
 async function fixture(options: Parameters<typeof startUIServer>[0] = { workspace: '' }) {
   const workspace = await mkdtemp(path.join(tmpdir(), 'flowqa-ui-'));
   await initWorkspace(workspace);
@@ -56,6 +57,23 @@ async function reviewedSuiteHash(server: UIServerHandle, file = 'task-flow.json'
   assert.equal(response.status, 200);
   return (await response.json() as { suiteHash: string }).suiteHash;
 }
+
+test('UI target registration canonicalizes new roots and keeps an older stored root URL and fingerprint', async () => {
+  const app = await fixture();
+  try {
+    const configFile = path.join(app.workspace, 'flowqa.config.json');
+    const config = await readConfig(app.workspace);
+    config.targets.legacy = { url: 'http://127.0.0.1:43982/', description: 'Old label' };
+    await writeFile(configFile, JSON.stringify(config));
+    const oldFingerprint = targetFingerprint(config.targets.legacy);
+    assert.equal((await post(app.server, app.token, '/api/targets', { name: 'fresh', url: 'http://127.0.0.1:43982/' })).status, 200);
+    assert.equal((await post(app.server, app.token, '/api/targets', { name: 'legacy', url: 'http://127.0.0.1:43982', description: 'New label' })).status, 200);
+    const targets = (await state(app.server)).targets;
+    assert.equal(targets.find(target => target.name === 'fresh')?.url, 'http://127.0.0.1:43982');
+    assert.deepEqual(targets.find(target => target.name === 'legacy'), { name: 'legacy', url: 'http://127.0.0.1:43982/', description: 'New label', targetFingerprint: oldFingerprint });
+    assert.equal((await readConfig(app.workspace)).targets.legacy?.description, 'New label');
+  } finally { await app.close(); }
+});
 
 test('loopback API rejects foreign host/origin/site, missing CSRF and oversized JSON', async () => {
   const app = await fixture();
@@ -479,7 +497,7 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
     const runId = randomUUID();
     const runDir = path.join(workspace, '.flowqa', 'runs', runId);
     await mkdir(runDir, { recursive: true });
-    const report = failureReport({ suite, runId, suiteHash: 'hash', target: { name: targetName, url: 'url' in config.targets[targetName]! ? config.targets[targetName]!.url : '' },
+    const report = failureReport({ suite, runId, suiteHash: 'a'.repeat(64), target: { name: targetName, url: 'url' in config.targets[targetName]! ? config.targets[targetName]!.url : '' },
       startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), blockedReasons: new Map() }, 'interrupted', 'Stopped');
     await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(report));
     await writeFile(path.join(runDir, 'qa-report.md'), renderMarkdown(report));
@@ -523,15 +541,24 @@ test('run accepts one immutable snapshot, stop aborts it, and history/report com
     assert.equal(current.runs[0]?.caseCount, 3);
     assert.equal(current.runs[0]?.passedCount, 0);
     assert.equal(current.lastRunId, current.runs[0]?.runId);
+    await writeFile(path.join(app.workspace, '.flowqa', 'runs', current.lastRunId!, 'qa-report.md'), '# Stale saved report');
     const report = await fetch(`${app.server.url}/api/report?runId=${current.lastRunId}`);
     assert.equal(report.status, 200);
     const englishReport = await report.json() as { markdown: string; report: { status: string; cases: unknown[] } };
     assert.match(englishReport.markdown, /QA results/);
+    assert.doesNotMatch(englishReport.markdown, /Stale saved report/);
     const koreanReportResponse = await fetch(`${app.server.url}/api/report?runId=${current.lastRunId}`, { headers: { 'accept-language': 'ko' } });
     assert.equal(koreanReportResponse.status, 200);
     const koreanReport = await koreanReportResponse.json() as typeof englishReport;
     assert.match(koreanReport.markdown, /QA 결과/);
     assert.deepEqual(koreanReport.report, englishReport.report);
+    const reportFile = path.join(app.workspace, '.flowqa', 'runs', current.lastRunId!, 'qa-report.json');
+    const validReport = await readFile(reportFile, 'utf8');
+    await writeFile(reportFile, JSON.stringify({ ...englishReport.report, cases: [{ ...(englishReport.report.cases[0] as object), attempts: [{ status: 'passed' }] }, ...englishReport.report.cases.slice(1)] }));
+    const legacyResponse = await fetch(`${app.server.url}/api/report?runId=${current.lastRunId}`);
+    assert.equal(legacyResponse.status, 200, 'Older metadata remains readable in the UI.');
+    assert.equal((await legacyResponse.json() as { markdown: string }).markdown, '# Stale saved report');
+    await writeFile(reportFile, validReport);
     assert.equal((await fetch(`${app.server.url}/api/report?runId=..%2Fother`)).status, 400);
 
     const outside = await mkdtemp(path.join(tmpdir(), 'flowqa-report-outside-'));
@@ -953,6 +980,12 @@ test('comparison API reads report JSON without Markdown and enforces locale, com
     const koPayload = await korean.json() as typeof payload;
     assert.deepEqual(koPayload.comparison, payload.comparison);
     assert.match(koPayload.markdown, /QA 실행 비교/);
+
+    after.result.target = { name: 'demo', url: 'http://127.0.0.1:4178/' };
+    await writeFile(path.join(after.runDir, 'qa-report.json'), JSON.stringify(after.result));
+    const rootComparison = await fetch(`${app.server.url}${route}`);
+    assert.equal(rootComparison.status, 200);
+    assert.equal((await rootComparison.json() as { comparison: { current: { target: { url: string } } } }).comparison.current.target.url, 'http://127.0.0.1:4178/');
 
     assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=${baseline}`)).status, 400);
     assert.equal((await fetch(`${app.server.url}/api/comparison?baseline=..%2Fetc&current=${current}`)).status, 400);

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
+import { failureReport, isSavedReport, normalizeReport1, renderMarkdown, renderSavedMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
 
 const suite: Suite = {
@@ -225,4 +225,25 @@ test('partial scope survives normalized, stopped, and failure reports without un
   assert.deepEqual(failed.selection, selectedContext.selection);
   assert.match(renderMarkdown(failed), /full suite not evaluated/);
   assert.throws(() => normalizeReport1(raw([result('B', 'passed', [attempt(0, 'passed')])], 'passed'), selectedContext), /does not match/);
+});
+
+test('saved reader keeps valid failed, blocked, mobile and partial reports with evidence', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-saved-report-'));
+  const rawDir = path.join(root, 'raw');
+  mkdirSync(path.join(rawDir, 'artifacts'), { recursive: true });
+  writeFileSync(path.join(rawDir, 'artifacts', 'screen.png'), 'png');
+  const selected: ReportContext = { ...context(rawDir), runId: '666ecb72-0b3d-41d2-8cc8-a13917b23226',
+    target: { name: 'local', kind: 'mobile', platform: 'ios', bundleId: 'kr.example.checkout', device: 'iPhone 17' },
+    selection: { caseIds: ['A', 'B'], totalCases: 3 }, blockedReasons: new Map() };
+  const failed = normalizeReport1(raw([
+    result('A', 'failed', [attempt(0, 'failed', [{ kind: 'screenshot', redaction: 'complete', path: 'screen.png' }])]),
+    result('B', 'passed', [attempt(0, 'passed')]),
+  ]), selected);
+  assert.equal(isSavedReport(failed), true);
+  const markdown = renderSavedMarkdown(failed, 'legacy snapshot', 'ko');
+  assert.match(markdown, /QA 결과|가능한 원인|선택 2 \/ 전체 3개|raw\/artifacts\/screen\.png|iPhone 17/);
+  assert.doesNotMatch(markdown, /legacy snapshot/);
+  const blocked = failureReport(selected, 'blocked', 'Device unavailable');
+  assert.equal(isSavedReport(blocked), true);
+  assert.match(renderSavedMarkdown(blocked, 'legacy snapshot', 'en'), /Possible causes/);
 });

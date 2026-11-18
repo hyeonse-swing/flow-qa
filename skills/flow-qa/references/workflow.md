@@ -16,6 +16,8 @@ Give the generated `planning/my-flow.prompt.md` to that AI, save its JSON reply 
 flow-qa validate cases/my-flow.json --workspace my-qa
 ```
 
+For a named role locator, copy the control's full accessible name from the target browser. For example, a link announced as `← All notes` needs that arrow in its name. If a locator finds no node, check the browser’s accessibility tree before treating it as an application failure.
+
 Validation confirms the schema, not that product expectations are correct. Cases with `questions` are blocked. `preconditions` describe setup but do not create accounts, inventory, login state, or other data. A changed source flow invalidates a suite with recorded source provenance; redesign cases rather than bypassing the check. Planning can also use a configured planner model, which sends the flow to the configured endpoint.
 
 ## Choose and execute a target
@@ -31,6 +33,10 @@ flow-qa run cases/my-flow.json --target preview --workspace my-qa
 Web execution needs the package's Chromium (`flow-qa browser install`). The run can click and type in the connected app; prepare test data first. Fixed steps run without a model. `act` and `assertAgent` need a separately configured tool and image capable agent model. `flow-qa generate cases/my-flow.json --workspace my-qa` writes test code without executing it.
 
 To run only named cases, repeat `--case TC-001 --case TC-003` on `run`. Omitted cases were not evaluated. Each case must establish its own starting state; selecting a case does not run earlier cases as prerequisites. The run writes `qa-report.json` and `qa-report.md` under a new `.flowqa/runs/<run-id>/`. Use `flow-qa report <run-directory> --workspace my-qa` to read a saved report. Compare only with attention to suite, target, selection, and external data state.
+
+When reopening an older run, the CLI and local UI render a supported normalized report using the requested language. The original on-disk Markdown file is the snapshot generated at execution time. The CLI can still display that snapshot if normalized JSON is missing or unreadable.
+
+Flow QA treats an HTTP(S) origin with or without its final slash as the same root when comparing reports. Paths such as `/preview` and `/preview/` stay distinct. When re-registering an existing target, use the same target name so its stored URL spelling and downstream fingerprint stay stable. Previously linked fingerprint-only results in Error-to-Test retain their original scope.
 
 ## External browser agent path (web only)
 

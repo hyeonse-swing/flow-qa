@@ -11,8 +11,8 @@ import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
 import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-selection.ts';
 import { runSuite } from './engine.ts';
-import { renderMarkdown, type QAReport } from './report.ts';
-import { targetFingerprint, targetLabel, type ReportTarget } from './targets.ts';
+import { renderSavedMarkdown, type QAReport } from './report.ts';
+import { registrationTarget, sameReportTarget, targetLabel, type ReportTarget } from './targets.ts';
 import { createAgentHandoff, reviewAgentHandoff } from './agent-handoff.ts';
 
 const help: Record<Locale, string> = {
@@ -179,9 +179,10 @@ export async function main(args: string[]): Promise<void> {
       if (platform === 'web' && (values['bundle-id'] !== undefined || values.device !== undefined) || platform !== 'web' && values.url !== undefined) {
         throw new Error(localized(locale, 'Use --url for web, or --bundle-id and --device for a mobile app.', '웹은 --url, 모바일 앱은 --bundle-id와 --device를 사용하세요.'));
       }
-      config.targets[name] = targetSchema.parse(platform === 'web'
+      const target = targetSchema.parse(platform === 'web'
         ? { url: required(values.url, '--url', locale) }
         : { kind: 'mobile', platform, bundleId: required(values['bundle-id'], '--bundle-id', locale), device: required(values.device, '--device', locale) });
+      config.targets[name] = registrationTarget(target, config.targets[name]);
       await writeConfig(workspace, config);
       console.log(localized(locale, `Target ${name} saved: ${targetLabel(config.targets[name]!)}. No app has been launched.`, `대상 ${name} 저장: ${targetLabel(config.targets[name]!)}. 앱은 실행하지 않았습니다.`)); return;
     }
@@ -272,10 +273,8 @@ export async function main(args: string[]): Promise<void> {
     if (command === 'report') {
       const runDirectory = resolve(workspace, required(arg, localized(locale, 'Run directory', '실행 폴더'), locale));
       let content = await readFile(resolve(runDirectory, 'qa-report.md'), 'utf8');
-      if (locale === 'ko') {
-        try { content = renderMarkdown(JSON.parse(await readFile(resolve(runDirectory, 'qa-report.json'), 'utf8')) as QAReport, locale); }
-        catch { /* Preserve the saved report if an older or malformed JSON report cannot be rendered. */ }
-      }
+      try { content = renderSavedMarkdown(JSON.parse(await readFile(resolve(runDirectory, 'qa-report.json'), 'utf8')), content, locale); }
+      catch { /* Preserve the saved Markdown when normalized JSON is absent or malformed. */ }
       console.log(content.replace(/\u001b/g, '')); return;
     }
     if (command === 'compare') {
@@ -290,7 +289,7 @@ export async function main(args: string[]): Promise<void> {
       };
       const before = await load(arg), after = await load(second);
       const sameSelection = JSON.stringify(before.cases.map((item) => item.id).sort()) === JSON.stringify(after.cases.map((item) => item.id).sort());
-      const comparable = before.suiteId === after.suiteId && before.suiteHash === after.suiteHash && targetFingerprint(before.target) === targetFingerprint(after.target) && sameSelection;
+      const comparable = before.suiteId === after.suiteId && before.suiteHash === after.suiteHash && sameReportTarget(before.target, after.target) && sameSelection;
       console.log(comparable ? localized(locale, 'Comparing the same suite, target and case selection (check external data state separately)', '동일 명세·대상·케이스 범위 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite, target or case selection differs; no direct regression verdict is made.', '명세·대상 또는 케이스 범위가 달라 직접적인 회귀 판정은 하지 않습니다.'));
       if (before.selection || after.selection) console.log(localized(locale, 'This comparison includes selected cases only; omitted cases were not evaluated.', '이 비교에는 선택 실행이 포함되어 있습니다. 미선택 케이스는 검증되지 않았습니다.'));
       const previous = new Map(before.cases.map((c) => [c.id, c.status]));
