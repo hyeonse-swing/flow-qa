@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { acquireMobileDevice, mobileReadiness, type MobileDevice } from '../src/mobile-runtime.ts';
+import { acquireMobileDevice, checkMobileApp, mobileReadiness, type MobileDevice } from '../src/mobile-runtime.ts';
 import { targetSchema } from '../src/schema.ts';
 
 const target = targetSchema.parse({ kind: 'mobile', platform: 'ios', bundleId: 'com.example.app', device: 'iPhone' });
@@ -11,6 +13,37 @@ test('readiness and the native engine use the same agent-device daemon version',
   const flow = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const mobile = JSON.parse(readFileSync(new URL('../node_modules/@e2e-dev/mobile/package.json', import.meta.url), 'utf8'));
   assert.equal(flow.dependencies['agent-device'], mobile.dependencies['agent-device']);
+});
+
+test('Android app preflight recognizes adb package absence without hiding command failures', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'flow-qa-adb-'));
+  const originalPath = process.env.PATH;
+  const adb = join(directory, 'adb');
+  writeFileSync(adb, `#!/bin/sh
+case "$*" in
+  *com.example.installed*) printf 'package:/data/app/installed.apk\\n' ;;
+  *com.example.missing*) exit 1 ;;
+  *com.example.empty*) exit 0 ;;
+  *com.example.error*) printf 'device offline\\n' >&2; exit 1 ;;
+  *com.example.exit2*) exit 2 ;;
+esac
+`);
+  chmodSync(adb, 0o755);
+  process.env.PATH = `${directory}:${originalPath ?? ''}`;
+  try {
+    const android = targetSchema.parse({ kind: 'mobile', platform: 'android', bundleId: 'com.example.missing', device: 'emulator-5580' });
+    if (android.kind !== 'mobile') throw new Error('Expected Android target.');
+    const status = (bundleId: string) => checkMobileApp({ ...android, bundleId }, 'emulator-5580');
+    assert.equal(await status('com.example.installed'), 'installed');
+    assert.equal(await status('com.example.missing'), 'missing');
+    assert.equal(await status('com.example.empty'), 'missing');
+    assert.equal(await status('com.example.error'), 'unknown');
+    assert.equal(await status('com.example.exit2'), 'unknown');
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('read-only readiness requires the explicitly named booted device', async () => {

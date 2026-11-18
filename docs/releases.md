@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.9.9 — Android emulator missing-app preflight
+
+Android's `adb shell pm path` returns exit code 1 with no output when a package is absent. The preflight now treats that exact response as a confirmed missing app, so a run is blocked before starting the native engine with zero attempts and a usable installation instruction. Diagnostic output, other exit codes, and unavailable ADB remain unknown and keep the engine result visible. A booted Android 16 emulator reproduced the prior error/one-attempt report for an absent package and the installed Settings app was exercised separately. The focused test uses an isolated ADB stub for the distinct responses.
+
 ## 0.9.8 — block a native run when the selected simulator lacks the app
 
 Before launching a test on a booted iOS simulator or Android emulator, Flow QA checks whether the registered app ID is installed. A confirmed missing app now produces a blocked report with zero attempts and an installation instruction. It no longer appears as an engine error after a failed launch. When the local query cannot confirm installation, the native engine still decides the result; physical device behavior is unchanged. No app is installed by this check.

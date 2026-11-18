@@ -88,7 +88,12 @@ export const checkMobileApp: CheckMobileApp = async (target, sdkDevice) => {
     try {
       const { stdout } = await execFileAsync('adb', ['-s', sdkDevice, 'shell', 'pm', 'path', target.bundleId], { timeout: 10_000, maxBuffer: 64 * 1024 });
       return stdout.split(/\r?\n/).some((line) => line.startsWith('package:')) ? 'installed' : stdout.trim() === '' ? 'missing' : 'unknown';
-    } catch { return 'unknown'; }
+    } catch (error) {
+      // Android's `pm path` exits 1 with no output when a package is absent.
+      // ADB and package-manager failures include diagnostics or another code.
+      const result = error as { code?: number | string; stdout?: string; stderr?: string };
+      return result.code === 1 && !result.stdout?.trim() && !result.stderr?.trim() ? 'missing' : 'unknown';
+    }
   }
   return 'unknown';
 };
