@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { selectCases } from './case-selection.ts';
+import { isReportSelectionValid, selectCases } from './case-selection.ts';
 import { idSchema, suiteSchema, targetSchema, type Locator, type Step, type Suite, type Target } from './schema.ts';
 import { targetFingerprint } from './targets.ts';
 import { sha256 } from './workspace.ts';
@@ -220,8 +220,10 @@ export async function reviewAgentHandoff(directoryPath: string, resultPath: stri
   if (parsedTarget.kind === 'mobile' || request.targetFingerprint !== targetFingerprint(parsedTarget)) throw new Error('Handoff target identity is invalid.');
   handoffTarget(request.target.name, parsedTarget);
   if (request.suite.platform === 'mobile' || request.suite.cases.some((item) => item.steps.some((step) => ['launchApp', 'back', 'swipe'].includes(step.type)))) throw new Error('Handoff contains unsupported mobile cases.');
-  if (request.selection && (request.selection.caseIds.length !== request.suite.cases.length ||
-      request.selection.caseIds.some((id, index) => id !== request.suite.cases[index]?.id))) throw new Error('Handoff selection does not match its cases.');
+  if (!isReportSelectionValid(request.suite.cases, request.selection) ||
+      request.selection?.caseIds.some((id, index) => id !== request.suite.cases[index]?.id)) {
+    throw new Error('Handoff selection does not match its cases.');
+  }
   const result = agentResultSchema.parse(await readBoundedJSON(resultPath));
   if (result.requestSha256 !== sha256(requestContent)) throw new Error('Agent result does not match this handoff request.');
   validateAgentResult(request, result);
@@ -238,6 +240,7 @@ export async function reviewAgentHandoff(directoryPath: string, resultPath: stri
   const lines = ['# External agent QA observations', '',
     'These findings were supplied by an external agent. File references and structure were checked; execution and authenticity were not verified by Flow QA.', '',
     `Suite: ${safeLine(request.suite.id)} · target: ${safeLine(request.target.name)} · ${result.cases.length} selected case(s)`,
+    ...(request.selection ? [`Selected from original suite: ${result.cases.length} of ${request.selection.totalCases} cases. Cases outside this handoff (not evaluated here): ${request.selection.totalCases - result.cases.length}.`] : []),
     `Observed passed: ${counts['observed-passed']} · observed failed: ${counts['observed-failed']} · blocked: ${counts.blocked} · unverified: ${counts.unverified}`, '',
     ...result.cases.flatMap((item, index) => {
       const testCase = request.suite.cases[index]!;

@@ -69,7 +69,9 @@ registerHooks({ resolve(specifier, context, nextResolve) {
     assert.equal(agentResultSchema.safeParse(result).success, true);
     const resultFile = join(directory, 'agent-result.json');
     await writeFile(resultFile, JSON.stringify(result));
-    assert.match((await blocked('agent-review', directory, resultFile)).stdout, /unverified: 1/);
+    const unverifiedReview = (await blocked('agent-review', directory, resultFile)).stdout;
+    assert.match(unverifiedReview, /unverified: 1/);
+    assert.match(unverifiedReview, /Selected from original suite: 1 of 3 cases\. Cases outside this handoff \(not evaluated here\): 2\./);
     await assert.rejects(blocked('agent-handoff', 'cases/task-flow.json', '--target', 'preview', '--out', 'bundle'), (error: unknown) => (error as { code: number }).code === 2);
     await assert.rejects(blocked('agent-handoff', 'cases/task-flow.json', '--target', 'preview', '--case', 'UNKNOWN', '--out', 'other'), (error: unknown) => (error as { code: number }).code === 2);
     await mkdir(join(directory, 'evidence'), { recursive: true });
@@ -82,6 +84,7 @@ registerHooks({ resolve(specifier, context, nextResolve) {
     assert.match(review.stdout, /External agent QA observations/);
     assert.match(review.stdout, /execution and authenticity were not verified/);
     assert.match(review.stdout, /Observed passed: 1/);
+    assert.match(review.stdout, /Selected from original suite: 1 of 3 cases\. Cases outside this handoff \(not evaluated here\): 2\./);
     assert.match(review.stdout, /Expected: text containing `First QA run` at testId `task-list`/);
     assert.match(review.stdout, /Observed: `The task list displayed First QA run after Add\.`/);
     assert.match(review.stdout, /Evidence: `evidence\/TC-001-step-3\.txt`/);
@@ -128,6 +131,22 @@ test('handoff refuses a linked parent before creating anything outside the works
     await rm(workspace, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
   }
+});
+
+test('partial handoff rejects a selection count equal to the selected suite', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flowqa-agent-selection-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', workspace]);
+  try {
+    await qa('init');
+    await qa('agent-handoff', 'cases/task-flow.json', '--target', 'demo', '--case', 'TC-001', '--case', 'TC-002', '--out', 'bundle');
+    const directory = join(workspace, 'bundle');
+    const requestFile = join(directory, 'request.json');
+    const request = JSON.parse(await readFile(requestFile, 'utf8'));
+    assert.equal(request.selection.totalCases, 3);
+    request.selection.totalCases = 2;
+    await writeFile(requestFile, JSON.stringify(request));
+    await assert.rejects(reviewAgentHandoff(directory, join(directory, 'agent-result.template.json')), /Handoff selection does not match its cases/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
 test('agent review rejects missing or linked evidence, traversal, mismatched hashes, and false passes', async () => {

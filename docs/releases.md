@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.9.4 — show partial external review scope
+
+When a handoff selects a subset with `--case`, `agent-review` now prints the selected count against the original suite count and explicitly labels cases outside the handoff as unevaluated. A selected case's `observed-passed` result remains an observation about that case only. The reviewer also rejects inconsistent selection totals in a handoff request. Existing request and result JSON shapes are unchanged. A three-case local suite reproduced the previous ambiguous summary with one selected case before this fix. The same saved request and result now show the two unevaluated cases. Local Node.js 24.22.1 checks passed 125 tests, type checking, UI checks, the package audit, and a fresh installed-package smoke that covers both full and selected handoffs.
+
 ## 0.9.3 — show reviewed expectations in external observations
 
 The `agent-review` summary now pairs each reported assertion with the case's reviewed expectation and locator, the external agent's observed detail, and its evidence path. The case title appears above its observations. This makes a failed observation identifiable from the summary without finding the matching step in `request.json`. Untrusted text is rendered as Markdown code spans with enough backticks to preserve literal values, including pipes, angle brackets, and backticks; line breaks and control characters are displayed as escapes. The handoff and result JSON contracts and their validation rules are unchanged.

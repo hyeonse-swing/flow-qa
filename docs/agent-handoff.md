@@ -53,6 +53,8 @@ The review requires the same request hash and case IDs in the same order. `obser
 
 The review summary shows each reported assertion's expected condition and locator from the reviewed case beside the agent's observed detail and evidence path. A failed case therefore identifies the first mismatched expectation without a manual lookup in `request.json`. The summary prints case content and observations, so inspect it before sharing.
 
+For a handoff made with `--case`, the summary shows the selected count against the original suite count and says how many cases were outside this handoff. Those other cases were not evaluated by this result, even when every selected case is `observed-passed`.
+
 Only the registered target identity is exported. Model connections and their key environment variables are omitted. A target URL with credentials, a query, a fragment, or a token-like path is refused rather than silently redacted. Case content is not masked because that would change the reviewed suite: inspect the URL, case text, and evidence before sharing the folder. The handoff accepts at most 1 MB of case/request JSON, supports web targets only, and does not prepare logins, accounts, or test data.
 
 ## 한국어
@@ -73,3 +75,5 @@ flow-qa agent-review my-qa/.flowqa/handoffs/<폴더> my-qa/.flowqa/handoffs/<폴
 검토 명령은 요청 해시·케이스 범위·관찰 상태·증거 파일의 존재와 경로를 확인합니다. 에이전트가 실제로 페이지를 방문했는지, 증거가 진짜인지까지 증명하지 않습니다. 이 결과는 에이전트의 관찰 기록으로만 표시하며 기존 `qa-report.json` 실행 기록에 합치지 않습니다. 모델 설정과 키 환경 변수는 묶음에 넣지 않습니다. 쿼리·인증정보·토큰처럼 보이는 경로가 있는 대상 URL은 거부하고, 케이스 본문은 몰래 마스킹하지 않습니다. 외부 공유 전에 케이스·대상·증거의 민감한 내용을 직접 확인하세요.
 
 검토 요약은 각 assertion의 검토된 기대 조건·locator와 에이전트의 관찰 내용·증거 파일 경로를 함께 보여줍니다. 실패한 케이스는 첫 불일치 기대값을 `request.json`에서 따로 찾지 않아도 확인할 수 있습니다. 요약에도 케이스 본문과 관찰 내용이 들어가므로 공유 전에 내용을 확인하세요.
+
+`--case`로 일부만 전달했다면 검토 요약에 원본 케이스 수 대비 선택한 수와 전달 범위 밖의 수가 표시됩니다. 선택된 케이스가 모두 `observed-passed`여도 범위 밖 케이스는 이 결과에서 평가되지 않았습니다.

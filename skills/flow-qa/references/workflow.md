@@ -49,4 +49,6 @@ flow-qa agent-review <handoff-directory> <handoff-directory>/agent-result.json
 
 This review checks request binding, case scope and order, observation structure, and evidence file references. It does not verify visits or evidence authenticity and does not create an engine QA report. Handoff omits model connection settings but does not mask case content; check material before sharing. See `AGENT_PROMPT.md` and `agent-result.schema.json` inside each generated bundle for that bundle's exact contract.
 
+When `--case` selects only part of a suite, the review summary displays the original case count and the number outside this handoff. An `observed-passed` result covers only the selected cases.
+
 For each observed assertion, the review summary pairs the reviewed expectation and locator with the agent's observation and evidence path. Inspect both sides of a mismatch before changing the application or its case.

@@ -75,6 +75,11 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   assert.equal(handoffRequest.suite.cases.length, 3);
   const handoffReview = command([...handoffArgs, 'agent-review', bundle, path.join(bundle, 'agent-result.template.json'), '--workspace', 'workspace'], consumer);
   assert.match(handoffReview, /unverified: 3/);
+  assert.doesNotMatch(handoffReview, /Selected from original suite:/);
+  command([...handoffArgs, 'agent-handoff', 'cases/task-flow.json', '--target', 'demo', '--case', 'TC-001', '--out', 'selected-bundle', '--workspace', 'workspace'], consumer);
+  const selectedBundle = path.join(consumer, 'workspace', 'selected-bundle');
+  const selectedReview = command([...handoffArgs, 'agent-review', selectedBundle, path.join(selectedBundle, 'agent-result.template.json'), '--workspace', 'workspace'], consumer);
+  assert.match(selectedReview, /Selected from original suite: 1 of 3 cases\. Cases outside this handoff \(not evaluated here\): 2\./);
   const agentResult = JSON.parse(await readFile(path.join(bundle, 'agent-result.template.json'), 'utf8'));
   agentResult.cases[0] = { id: 'TC-001', status: 'observed-failed', observations: [
     { stepIndex: 3, outcome: 'mismatch', detail: 'The synthetic package check found no task in the list.', evidence: 'evidence/package-smoke.txt' },
