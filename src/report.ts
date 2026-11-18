@@ -392,6 +392,8 @@ export function renderMarkdown(report: QAReport, locale: Locale = 'en'): string 
     if (report.usage.estimatedCostUsd !== undefined) lines.push(`- ${label('Estimated cost (USD)', '추정 비용(USD)')}: ${report.usage.estimatedCostUsd}`);
     lines.push('');
   }
-  lines.push(label('## Possible causes', '## 가능한 원인'), '', label('The observed evidence alone does not establish the cause. Check the raw report and local evidence.', '실패의 원인은 위 실제 근거만으로 단정하지 않습니다. 원본 보고서와 로컬 증거를 확인하세요.'), '');
+  if (report.status !== 'passed') {
+    lines.push(label('## Possible causes', '## 가능한 원인'), '', label('The observed evidence alone does not establish the cause. Check the raw report and local evidence.', '실패의 원인은 위 실제 근거만으로 단정하지 않습니다. 원본 보고서와 로컬 증거를 확인하세요.'), '');
+  }
   return lines.join('\n');
 }

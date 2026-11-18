@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.9.6 — show diagnosis guidance only for nonpassing runs
+
+Passing Markdown reports no longer include the generic **Possible causes** section or its Korean failure wording. Failed, blocked, interrupted, and error reports retain the existing guidance; report JSON and other Markdown sections are unchanged. A focused regression checks passing and failed reports in English and Korean. Re-rendering the saved healthy and assertion-failure reports confirmed that only the healthy report loses the footer; the failed report remains byte-for-byte identical.
+
 ## 0.9.5 — identify the installed CLI version
 
 The packaged skill now uses `npm ls @ihyeon/flow-qa --depth=0` to check the project’s installed version. The CLI’s `--help` lists available commands.

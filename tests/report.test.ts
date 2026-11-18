@@ -36,6 +36,22 @@ function context(rawDir: string): ReportContext {
     startedAt: at, finishedAt: at, rawDir, testFile: path.join(path.dirname(rawDir), 'suite.e2e.ts'), blockedReasons: new Map([['C', 'Unresolved question']]) };
 }
 
+test('shows possible causes only when the run did not pass', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const reportContext: ReportContext = { ...context(root), suite: { ...suite, cases: [suite.cases[0]!] }, blockedReasons: new Map() };
+  const passed = normalizeReport1(raw([result('A', 'passed', [attempt(0, 'passed')])], 'passed'), reportContext);
+  const failed = normalizeReport1(raw([result('A', 'failed', [attempt(0, 'failed')])]), reportContext);
+
+  assert.equal(passed.status, 'passed');
+  assert.doesNotMatch(renderMarkdown(passed), /Possible causes|observed evidence alone/);
+  assert.doesNotMatch(renderMarkdown(passed, 'ko'), /가능한 원인|실패의 원인은/);
+
+  assert.equal(failed.status, 'failed');
+  assert.match(renderMarkdown(failed), /## Possible causes\n\nThe observed evidence alone does not establish the cause/);
+  assert.match(renderMarkdown(failed, 'ko'), /## 가능한 원인\n\n실패의 원인은/);
+  assert.match(renderMarkdown(failureReport(reportContext, 'error', 'No raw report')), /## Possible causes/);
+});
+
 test('retains failed and flaky attempts, blocked questions, usage, and only safe local evidence links', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
   const rawDir = path.join(root, 'raw');
