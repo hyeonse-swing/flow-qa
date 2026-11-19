@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.9.10 — Archived report comparison
+
+`flow-qa compare` rejects an archived case with an unknown status instead of showing it as a normal transition. The English and Korean installation examples use the current public release.
+
 ## 0.9.9 — Android emulator missing-app preflight
 
 Android's `adb shell pm path` returns exit code 1 with no output when a package is absent. The preflight now treats that exact response as a confirmed missing app, so a run is blocked before starting the native engine with zero attempts and a usable installation instruction. Diagnostic output, other exit codes, and unavailable ADB remain unknown and keep the engine result visible. A booted Android 16 emulator reproduced the prior error/one-attempt report for an absent package and the installed Settings app was exercised separately. The focused test uses an isolated ADB stub for the distinct responses.
