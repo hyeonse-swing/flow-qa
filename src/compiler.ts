@@ -1,4 +1,4 @@
-import { suiteSchema, type Case, type Locator, type Step, type Suite } from './schema.ts';
+import { suiteSchema, type Case, type Locator, type Step, type Suite, type Target } from './schema.ts';
 
 const literal = (value: string | boolean): string => JSON.stringify(value);
 
@@ -12,10 +12,10 @@ function locatorCode(locator: Locator): string {
   return `screen.${method}(${literal(locator.value)})`;
 }
 
-function stepCode(step: Step): string {
+function stepCode(step: Step, launchApp: string): string {
   switch (step.type) {
     case 'open': return `await app.open(${literal(step.path)});`;
-    case 'launchApp': return 'await app.open();';
+    case 'launchApp': return launchApp;
     case 'back': return 'await app.back();';
     case 'swipe': return `await screen.swipe({ direction: ${literal(step.direction)} });`;
     case 'act': return `await agent.act(${literal(step.instruction)});`;
@@ -44,9 +44,16 @@ export function needsAgent(suite: Suite): boolean {
   return suite.cases.some((testCase) => !testCase.questions.length && testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent'));
 }
 
-export function compileSuite(suite: Suite): string {
+export function compileSuite(suite: Suite, target?: Target): string {
   const parsed = suiteSchema.parse(suite);
   const mobile = parsed.platform === 'mobile';
+  // Android Settings may keep a system process alive after force-stop. The
+  // mobile SDK's app.open() requires that process to disappear, so use its
+  // supported foreground launch for this one built-in app.
+  const settings = mobile && target?.kind === 'mobile' && target.platform === 'android' && target.bundleId === 'com.android.settings';
+  const launchApp = settings
+    ? 'await device.home();\n  await device.openApp("com.android.settings");\n  if ((await device.foregroundApp()).bundleId !== "com.android.settings") throw new Error("Android Settings did not reach the foreground.");'
+    : 'await app.open();';
   const lines = [`import { test } from '${mobile ? '@e2e-dev/mobile' : '@e2e-dev/web'}';`, "import { expect } from 'e2e';", ''];
   for (const testCase of parsed.cases) {
     const title = literal(`[${testCase.id}] ${testCase.title}`);
@@ -55,14 +62,15 @@ export function compileSuite(suite: Suite): string {
       continue;
     }
     const fixtures = ['app'];
+    if (settings) fixtures.push('device');
     if (testCase.steps.some((step) => 'locator' in step || step.type === 'swipe')) fixtures.push('screen');
     if (testCase.steps.some((step) => step.type === 'assertUrl')) fixtures.push('browser');
     if (testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent')) fixtures.push('agent');
     lines.push(`test(${title}, async ({ ${fixtures.join(', ')} }) => {`);
     if (mobile) {
-      if (testCase.steps[0]?.type !== 'launchApp') lines.push('  await app.open();');
+      if (testCase.steps[0]?.type !== 'launchApp') lines.push(`  ${launchApp}`);
     } else if (testCase.steps[0]?.type !== 'open') lines.push("  await app.open('/');");
-    for (const step of testCase.steps) lines.push(`  ${stepCode(step)}`);
+    for (const step of testCase.steps) lines.push(`  ${stepCode(step, launchApp)}`);
     lines.push('});');
   }
   return `${lines.join('\n')}\n`;

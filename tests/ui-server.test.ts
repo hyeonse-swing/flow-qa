@@ -224,6 +224,35 @@ test('suite read, compile and save keep provenance inside regular flows and crea
   } finally { await app.close(); }
 });
 
+test('UI script preview matches the selected Android Settings execution path', async () => {
+  const app = await fixture();
+  try {
+    const source = await readSuite(path.join(app.workspace, 'cases', 'task-flow.json'));
+    const suite: Suite = { ...source, platform: 'mobile', source: undefined, id: 'settings-preview',
+      requirements: [{ id: 'R1', text: 'Settings opens.' }],
+      cases: [{ id: 'C1', title: 'Settings', requirementIds: ['R1'], preconditions: [], questions: [], steps: [
+        { type: 'launchApp' }, { type: 'assertVisible', locator: { by: 'text', value: 'Network & internet' }, visible: true },
+      ] }],
+    };
+    await writeFile(path.join(app.workspace, 'cases', 'settings-preview.json'), JSON.stringify(suite));
+    assert.equal((await post(app.server, app.token, '/api/targets', { name: 'settings', kind: 'mobile', platform: 'android',
+      bundleId: 'com.android.settings', device: 'emulator-5580', description: '' })).status, 200);
+    const plain = await (await fetch(`${app.server.url}/api/suite?file=settings-preview.json`)).json() as { script: string };
+    const selectedResponse = await fetch(`${app.server.url}/api/suite?file=settings-preview.json&targetName=settings`);
+    assert.equal(selectedResponse.status, 200);
+    const selected = await selectedResponse.json() as { script: string };
+    const compiledResponse = await post(app.server, app.token, '/api/compile', { suite, targetName: 'settings' });
+    assert.equal(compiledResponse.status, 200);
+    const compiled = await compiledResponse.json() as { script: string };
+    assert.match(plain.script, /await app\.open\(\)/);
+    assert.equal(selected.script, compiled.script);
+    assert.match(selected.script, /device\.openApp\("com\.android\.settings"\)/);
+    assert.doesNotMatch(selected.script, /await app\.open\(\)/);
+    assert.equal((await post(app.server, app.token, '/api/compile', { suite, targetName: 'absent' })).status, 400);
+    assert.equal((await post(app.server, app.token, '/api/compile', { suite: source, targetName: 'settings' })).status, 409);
+  } finally { await app.close(); }
+});
+
 test('file import verifies external source bytes and prepares an unsaved copy with review questions intact', async () => {
   const app = await fixture();
   try {

@@ -50,6 +50,10 @@ Flow QA does not download SDKs, create or boot simulators, or install applicatio
 
 The compiler launches the configured app at the start of each runnable case unless the first step is already `launchApp`. It does not clear app data or create login state. A launch is not a fresh account/session. The web-only `open` path and `assertUrl` steps are rejected in mobile suites, and native steps are rejected in web suites.
 
+Android's built-in Settings app (`com.android.settings`) can keep its system process alive after a force-stop. For that app only, Flow QA sends the device home, opens Settings through the mobile engine, and confirms Settings is in the foreground. This resets the visible Settings screen in the tested Android 16 emulator without requiring the system process to exit; it does not clear Settings data or guarantee process restart. Other Android apps and iOS apps continue using the engine's normal `app.open()` restart.
+
+To inspect the script that a selected target will run, choose that target in the local UI before reviewing or downloading the script, or use `flow-qa generate cases/my-flow.json --target my-android --workspace ./my-qa`. CLI generation without `--target` is target-neutral and may differ from Settings execution.
+
 Native `testId` locators use iOS accessibility identifiers or Android resource IDs. Accessibility exposure depends on the app framework. Fixed steps need no model; natural-language steps require a compatible tool/image-capable agent. A WebView's exposed native controls may be usable, but this path does not provide a browser DOM session or prove JavaScript bridge behavior.
 
 ## Results and proof boundaries

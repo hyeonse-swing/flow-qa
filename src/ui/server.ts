@@ -296,13 +296,23 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     return flow;
   }
-  async function getSuite(file: string, verify = false): Promise<{ suite: Suite; suiteHash: string; script: string; flow?: string }> {
+  async function compileForTarget(suite: Suite, targetName?: string): Promise<string> {
+    if (targetName === undefined) return compileSuite(suite);
+    const name = parse(idSchema, targetName);
+    const target = (await config()).targets[name];
+    if (!target) invalid('The selected target was not found.');
+    if ((suite.platform ?? 'web') !== (target.kind === 'mobile' ? 'mobile' : 'web')) {
+      throw new HTTPError(409, 'The case platform and selected target do not match. Review them again.');
+    }
+    return compileSuite(suite, target);
+  }
+  async function getSuite(file: string, verify = false, targetName?: string): Promise<{ suite: Suite; suiteHash: string; script: string; flow?: string }> {
     safeBasename(file, '.json');
     const root = await directory(['cases']);
     if (!root) notFound();
     const suite = parse(suiteSchema, jsonObject(await readRegular(root, file, MAX_SUITE)));
     const flow = await readSource(suite, verify);
-    return { suite, suiteHash: sha256(JSON.stringify(suite)), script: compileSuite(suite), ...(flow === undefined ? {} : { flow }) };
+    return { suite, suiteHash: sha256(JSON.stringify(suite)), script: await compileForTarget(suite, targetName), ...(flow === undefined ? {} : { flow }) };
   }
   async function suites() {
     const root = await directory(['cases']);
@@ -450,7 +460,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
       if (url.pathname === '/api/suite') {
         const file = url.searchParams.get('file');
         if (!file) invalid('A case file name is required.');
-        sendJSON(response, 200, await getSuite(file, true)); return;
+        sendJSON(response, 200, await getSuite(file, true, url.searchParams.get('targetName') ?? undefined)); return;
       }
       if (url.pathname === '/api/report') {
         const runId = url.searchParams.get('runId');
@@ -639,9 +649,9 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     }
     if (url.pathname === '/api/compile') {
       const result = await mutation(async () => {
-        const { suite } = parse(z.object({ suite: suiteSchema }).strict(), body);
+        const { suite, targetName } = parse(z.object({ suite: suiteSchema, targetName: idSchema.optional() }).strict(), body);
         await readSource(suite, true);
-        return { suite, script: compileSuite(suite) };
+        return { suite, script: await compileForTarget(suite, targetName) };
       });
       sendJSON(response, 200, result); return;
     }

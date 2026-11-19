@@ -267,6 +267,12 @@ test('CLI authors native cases before target setup and saves user-selected iOS a
     assert.doesNotMatch(script, /@e2e-dev\/web|browser/);
     await qa('connect', 'ios-test', '--platform', 'ios', '--bundle-id', 'com.example.qa', '--device', 'QA iPhone');
     await qa('connect', 'android-test', '--platform', 'android', '--bundle-id', 'com.example.qa', '--device', 'emulator-5554');
+    await qa('connect', 'settings-test', '--platform', 'android', '--bundle-id', 'com.android.settings', '--device', 'emulator-5580');
+    await qa('generate', 'cases/mobile-example.json', '--target', 'settings-test', '--out', 'generated/settings.e2e.ts');
+    assert.match(await readFile(join(dir, 'generated/settings.e2e.ts'), 'utf8'), /device\.openApp\("com\.android\.settings"\)/);
+    await qa('generate', 'cases/mobile-example.json', '--target', 'ios-test', '--out', 'generated/ios.e2e.ts');
+    assert.match(await readFile(join(dir, 'generated/ios.e2e.ts'), 'utf8'), /app\.open\(\)/);
+    await assert.rejects(qa('generate', 'cases/mobile-example.json', '--target', 'absent', '--out', 'generated/absent.e2e.ts'));
     const saved = await readFile(join(dir, 'flowqa.config.json'), 'utf8');
     const targets = JSON.parse(saved).targets;
     assert.deepEqual(targets['ios-test'], { kind: 'mobile', platform: 'ios', bundleId: 'com.example.qa', device: 'QA iPhone', description: '' });

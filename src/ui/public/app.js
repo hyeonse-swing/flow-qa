@@ -5,7 +5,7 @@
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
   const defaultReportFilter = () => ({ search: '', status: 'all', sort: 'recorded', repeatedOnly: false });
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -210,12 +210,12 @@
   }
   function setDraft(suite, script, origin, sourceFlow = '', savedFile = '', savedHash = '') {
     app.rerunOrigin = null; app.rerunTargetMismatch = false; renderRerunHints();
-    app.draft = suite; app.script = script; app.origin = origin; app.sourceFlow = sourceFlow; app.boundSource = suite.source ? { ...suite.source } : null; app.savedFile = savedFile; app.savedHash = savedHash; app.stale = false; app.dirty = false;
+    app.draft = suite; app.script = script; app.neutralScript = script; app.origin = origin; app.sourceFlow = sourceFlow; app.boundSource = suite.source ? { ...suite.source } : null; app.savedFile = savedFile; app.savedHash = savedHash; app.stale = false; app.dirty = false;
     $('suite-editor').value = JSON.stringify(suite, null, 2);
     $('scenario-platform').value = suite.platform || 'web';
     $('review-checkbox').checked = false;
     app.selectedCaseIds = new Set((suite.cases || []).map((item) => item.id));
-    summarize(suite); renderCaseSelection(); readiness();
+    summarize(suite); renderCaseSelection(); void syncScriptForTarget();
   }
   function targetOptions() {
     const selected = $('target-select').value;
@@ -231,6 +231,26 @@
     for (const target of app.state?.targets || []) { const row = el('div', 'settings-entry'); row.append(el('strong', '', target.name), document.createTextNode(` · ${targetLabel(target)}${target.description ? ` · ${target.description}` : ''}`)); list.append(row); }
   }
   function targetDescription() { const target = selectedTarget(); $('target-description').textContent = target ? `${targetLabel(target)}${target.description ? ` · ${target.description}` : ''}` : t('scenario.targetHint'); readiness(); }
+  async function syncScriptForTarget() {
+    const revision = ++app.scriptRevision;
+    const suite = app.draft;
+    const target = selectedTarget();
+    const settings = suite?.platform === 'mobile' && target?.platform === 'android' && target.bundleId === 'com.android.settings';
+    $('review-checkbox').checked = false;
+    app.script = settings ? '' : app.neutralScript;
+    readiness();
+    if (!settings || !suite || app.dirty || app.stale) return;
+    try {
+      const result = await api('/api/compile', { suite, targetName: target.name });
+      if (revision !== app.scriptRevision || suite !== app.draft || selectedTarget()?.name !== target.name) return;
+      app.script = result.script;
+      readiness();
+    } catch (error) {
+      if (revision !== app.scriptRevision) return;
+      showError(error);
+      readiness();
+    }
+  }
   function renderRerunHints() {
     $('rerun-origin-hint').hidden = !app.rerunOrigin;
     if (app.rerunOrigin) $('rerun-origin-hint').textContent = t('app.rerunPrepared', app.rerunOrigin);
@@ -656,6 +676,7 @@
     const target = app.displayTargets.find((item) => item.name === result.targetName);
     const sameTarget = result.targetMatches === true && target?.targetFingerprint === result.targetFingerprint;
     $('target-select').value = sameTarget ? target.name : '';
+    await syncScriptForTarget();
     app.rerunTargetMismatch = !sameTarget;
     app.rerunOrigin = { runId: result.originRunId, count: result.caseIds.length };
     renderRerunHints(); targetDescription();
@@ -831,7 +852,7 @@
   async function saveModel(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const body = { role: form.dataset.role, baseURL: String(values.get('baseURL') || '').trim(), model: String(values.get('model') || '').trim() }; const apiKeyEnv = String(values.get('apiKeyEnv') || '').trim(); if (apiKeyEnv) body.apiKeyEnv = apiKeyEnv; await api('/api/models', body); await refresh(true); noticeKey('app.modelSaved'); }); }
   async function clearModel(role) { await work(async () => { await api('/api/models', { role, clear: true }); await refresh(true); noticeKey('app.modelCleared'); }); }
   function targetFields() { const mobile = $('target-kind').value !== 'web'; for (const [id, required] of [['target-url-field', !mobile], ['target-bundle-field', mobile], ['target-device-field', mobile]]) { const field = $(id); field.hidden = !required; field.querySelector('input').required = required; } }
-  async function saveTarget(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const kind = String(values.get('kind') || 'web'); const body = { name: String(values.get('name') || '').trim(), description: String(values.get('description') || '').trim() }; if (kind === 'web') body.url = String(values.get('url') || '').trim(); else { body.kind = 'mobile'; body.platform = kind; body.bundleId = String(values.get('bundleId') || '').trim(); body.device = String(values.get('device') || '').trim(); } await api('/api/targets', body); form.reset(); targetFields(); await refresh(true); noticeKey('app.targetSaved'); }); }
+  async function saveTarget(event) { event.preventDefault(); const form = event.currentTarget; await work(async () => { const values = new FormData(form); const kind = String(values.get('kind') || 'web'); const body = { name: String(values.get('name') || '').trim(), description: String(values.get('description') || '').trim() }; if (kind === 'web') body.url = String(values.get('url') || '').trim(); else { body.kind = 'mobile'; body.platform = kind; body.bundleId = String(values.get('bundleId') || '').trim(); body.device = String(values.get('device') || '').trim(); } await api('/api/targets', body); form.reset(); targetFields(); await refresh(true); await syncScriptForTarget(); noticeKey('app.targetSaved'); }); }
   function renderLanguage() {
     const editedModels = [...document.querySelectorAll('.model-form')].map((form) => ({ role: form.dataset.role, values: Object.fromEntries([...form.querySelectorAll('input')].map((input) => [input.name, input.value])) }));
     const focusedModel = document.activeElement?.closest?.('.model-form');
@@ -891,7 +912,7 @@
       const json = $('suite-editor').value;
       const unsavedJson = json.trim() && (!app.savedFile || json !== JSON.stringify(app.draft, null, 2));
       if (unsavedJson && !confirmScenarioReplacement('app.confirmNewDraft')) return;
-      app.draft = null; app.selectedCaseIds = new Set(); app.script = ''; app.savedFile = ''; app.savedHash = '';
+      app.draft = null; app.selectedCaseIds = new Set(); app.script = ''; app.neutralScript = ''; app.scriptRevision += 1; app.savedFile = ''; app.savedHash = '';
       app.origin = 'none'; app.sourceFlow = ''; app.boundSource = null; app.stale = false; app.dirty = false; app.rerunOrigin = null; app.rerunTargetMismatch = false; renderRerunHints();
       $('suite-editor').value = ''; $('review-checkbox').checked = false;
       summarize(null); renderCaseSelection(); readiness();
@@ -900,8 +921,8 @@
     });
     $('flow-input').addEventListener('input', () => { if (app.origin === 'imported' ? $('flow-input').value !== editableFlow(app.sourceFlow) : (app.sourceFlow || app.boundSource) && $('flow-input').value.trim() !== editableFlow(app.sourceFlow).trim()) { app.stale = true; app.savedHash = ''; $('review-checkbox').checked = false; } readiness(); });
     $('scenario-platform').addEventListener('change', () => { app.planRequest += 1; if (app.draft) { app.stale = true; app.savedHash = ''; } $('review-checkbox').checked = false; readiness(); });
-    $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
-    $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; if ($('target-select').value) { app.rerunTargetMismatch = false; renderRerunHints(); } targetDescription(); });
+    $('suite-editor').addEventListener('input', () => { app.dirty = true; app.script = ''; app.neutralScript = ''; app.scriptRevision += 1; app.savedFile = ''; app.savedHash = ''; if (app.origin === 'none') app.origin = 'manual'; $('review-checkbox').checked = false; summarize(null); readiness(); });
+    $('review-checkbox').addEventListener('change', readiness); $('target-select').addEventListener('change', () => { $('review-checkbox').checked = false; if ($('target-select').value) { app.rerunTargetMismatch = false; renderRerunHints(); } targetDescription(); void syncScriptForTarget(); });
     $('case-selection-list').addEventListener('change', (event) => { const input = event.target.closest('input[data-case-id]'); if (!input) return; const next = new Set(app.selectedCaseIds); if (input.checked) next.add(input.dataset.caseId); else next.delete(input.dataset.caseId); changeCaseSelection(next); });
     $('select-all-cases').addEventListener('click', () => changeCaseSelection((app.draft?.cases || []).map((item) => item.id)));
     $('clear-case-selection').addEventListener('click', () => changeCaseSelection([]));

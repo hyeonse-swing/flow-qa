@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import path from 'node:path';
 import ts from 'typescript';
 import { compileSuite, expectedChecks, needsAgent } from '../src/compiler.ts';
-import type { Suite } from '../src/schema.ts';
+import type { Suite, Target } from '../src/schema.ts';
 
 const hostile = 'x" ); process.exit(1); //\n` ${danger}';
 const suite: Suite = {
@@ -107,4 +107,31 @@ test('native compiler launches the pinned app when the first step is not launchA
   const output = compileSuite(native);
   assert.match(output, /async \(\{ app, screen, agent \}\) => \{\n  await app\.open\(\);\n  await screen\.swipe/);
   assert.equal(output.match(/await app\.open\(\)/g)?.length, 1);
+});
+
+test('Android Settings uses a verified foreground launch while other apps retain restart', () => {
+  const native: Suite = { ...suite, platform: 'mobile', cases: [{ ...suite.cases[0]!, steps: [
+    { type: 'launchApp' }, { type: 'assertVisible', locator: { by: 'text', value: 'Network & internet' }, visible: true },
+  ] }] };
+  const settings: Target = { kind: 'mobile', platform: 'android', bundleId: 'com.android.settings', device: 'emulator-5580', description: '' };
+  const output = compileSuite(native, settings);
+  assert.match(output, /async \(\{ app, device, screen \}\)/);
+  assert.match(output, /await device\.home\(\);\n  await device\.openApp\("com\.android\.settings"\);/);
+  assert.match(output, /await device\.foregroundApp\(\)/);
+  assert.doesNotMatch(output, /await app\.open\(\)/);
+  const implicit = compileSuite({ ...native, cases: [{ ...native.cases[0]!, steps: native.cases[0]!.steps.slice(1) }] }, settings);
+  assert.match(implicit, /await device\.home\(\);\n  await device\.openApp\("com\.android\.settings"\);/);
+  assert.match(compileSuite(native, { ...settings, bundleId: 'com.google.android.deskclock' }), /await app\.open\(\)/);
+  assert.match(compileSuite(native, { ...settings, platform: 'ios' }), /await app\.open\(\)/);
+
+  const fileName = path.resolve('tests/.generated-settings-suite.ts');
+  const options: ts.CompilerOptions = { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ES2023, strict: true, skipLibCheck: true, noEmit: true, types: ['node'] };
+  const host = ts.createCompilerHost(options);
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => name === fileName
+    ? ts.createSourceFile(name, output, languageVersion, true)
+    : original(name, languageVersion, onError, shouldCreateNewSourceFile);
+  const program = ts.createProgram([fileName], options, host);
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
 });

@@ -29,7 +29,8 @@ Usage: flow-qa <command> [arguments] [options]
                                       Plan cases before target setup; produce a prompt if no model is configured
   plan <flow.md> --prompt-only         Create a prompt for your current AI tool
   validate <cases.json>               Check case structure and assertions
-  generate <cases.json> [--out test.ts] Generate e2e test code
+  generate <cases.json> [--target <name>] [--out test.ts]
+                                      Generate target-aware e2e code (without --target: target-neutral)
   run <cases.json> --target <name>     Run against a registered target and save a QA report
       [--case <id> ...]               Run only the selected case IDs (repeat --case for more)
   agent-handoff <cases.json> --target <name> [--case <id> ...] [--out directory]
@@ -59,7 +60,8 @@ Local example: flow-qa ui --demo
                                       대상 설정 전에 케이스 설계; 모델 미연결 시 프롬프트 생성
   plan <flow.md> --prompt-only         현재 사용하는 AI에 전달할 프롬프트 생성
   validate <cases.json>               케이스 구조와 검증 조건 확인
-  generate <cases.json> [--out test.ts] e2e 테스트 코드 생성
+  generate <cases.json> [--target <name>] [--out test.ts]
+                                      대상별 e2e 코드 생성 (--target 생략 시 대상 중립)
   run <cases.json> --target <name>     연결한 대상에서 실행하고 QA 리포트 저장
       [--case <id> ...]               선택한 케이스만 실행 (--case를 반복해 여러 개 선택)
   agent-handoff <cases.json> --target <name> [--case <id> ...] [--out directory]
@@ -230,7 +232,16 @@ export async function main(args: string[]): Promise<void> {
       }
       if (command === 'generate') {
         const output = resolve(workspace, values.out ?? `generated/${suite.id}.e2e.ts`);
-        await writeOutput(output, compileSuite(suite)); console.log(localized(locale, `Test script: ${output}`, `실행 스크립트: ${output}`)); return;
+        const targetName = values.target;
+        const target = targetName === undefined ? undefined : (await readConfig(workspace)).targets[targetName];
+        if (targetName !== undefined && !target) throw new Error(localized(locale, `Target not found: ${targetName}`, `대상을 찾지 못했습니다: ${targetName}`));
+        if (target && (suite.platform ?? 'web') !== (target.kind === 'mobile' ? 'mobile' : 'web')) {
+          throw new Error(localized(locale, 'The case platform and selected target do not match.', '케이스 플랫폼과 선택한 대상이 일치하지 않습니다.'));
+        }
+        await writeOutput(output, compileSuite(suite, target));
+        console.log(localized(locale,
+          `Test script (${targetName ? `target: ${targetName}` : 'target-neutral; use --target to match a run'}): ${output}`,
+          `실행 스크립트 (${targetName ? `대상: ${targetName}` : '대상 중립; 실행과 일치시키려면 --target 사용'}): ${output}`)); return;
       }
       if (command === 'agent-handoff') {
         const config = await readConfig(workspace);

@@ -84,6 +84,21 @@ function nativeSuite(): Suite {
 
 const nativeConfig: Config = { ...config, targets: { phone: { kind: 'mobile', platform: 'android', bundleId: 'com.example.app', device: 'R58N123', description: '' } } };
 
+test('run compilation selects the Android Settings foreground launch for its configured target', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const abort = new AbortController();
+  abort.abort();
+  const settingsConfig: Config = { ...nativeConfig, targets: { phone: {
+    kind: 'mobile', platform: 'android', bundleId: 'com.android.settings', device: 'emulator-5580', description: '',
+  } } };
+  const result = await runSuite({ workspace, suite: nativeSuite(), config: settingsConfig, targetName: 'phone', signal: abort.signal });
+  assert.equal(result.report.status, 'interrupted');
+  const source = readFileSync(path.join(result.runDir, 'suite.e2e.ts'), 'utf8');
+  assert.match(source, /await device\.home\(\);\n  await device\.openApp\("com\.android\.settings"\);/);
+  assert.match(source, /await device\.foregroundApp\(\)/);
+  assert.doesNotMatch(source, /await app\.open\(\)/);
+});
+
 test('suite and target platform mismatch blocks before subprocess with zero attempts', async () => {
   const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
   const result = await runSuite({ workspace, suite: nativeSuite(), config, targetName: 'local' });

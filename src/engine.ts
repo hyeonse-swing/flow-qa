@@ -8,7 +8,7 @@ import { selectCases } from './case-selection.ts';
 import { compileSuite } from './compiler.ts';
 import { acquireMobileDevice, checkMobileApp, mobileReadiness, type CheckMobileApp, type ListMobileDevices } from './mobile-runtime.ts';
 import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type QAReport } from './report.ts';
-import { configSchema, suiteSchema, type Config, type Suite } from './schema.ts';
+import { configSchema, suiteSchema, type Config, type Suite, type Target } from './schema.ts';
 import { reportTarget, targetKind, type ReportTarget } from './targets.ts';
 import { verifySuiteSource } from './workspace.ts';
 
@@ -40,8 +40,8 @@ function packageModule(specifier: string): string {
   return import.meta.resolve(specifier);
 }
 
-function compiledTest(suite: Suite): string {
-  const source = compileSuite(suite);
+function compiledTest(suite: Suite, target: Target): string {
+  const source = compileSuite(suite, target);
   return source
     .replace("from '@e2e-dev/web'", `from ${JSON.stringify(packageModule('@e2e-dev/web'))}`)
     .replace("from '@e2e-dev/mobile'", `from ${JSON.stringify(packageModule('@e2e-dev/mobile'))}`)
@@ -236,7 +236,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
     const testFile = path.join(runDir, TEST_FILE);
     const configFile = path.join(runDir, CONFIG_FILE);
     const agentAvailable = runnable.some(agentCase);
-    await writeFile(testFile, compiledTest(executable), { mode: 0o600 });
+    await writeFile(testFile, compiledTest(executable, selectedTarget), { mode: 0o600 });
     await writeFile(configFile, generatedConfig(suite, config, options.targetName, agentAvailable, runId, sdkDevice), { mode: 0o600 });
     if (options.signal?.aborted) {
       report = failureReport(context(), 'interrupted', 'An interrupt signal arrived before the run started.');
