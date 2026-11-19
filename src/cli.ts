@@ -284,7 +284,10 @@ export async function main(args: string[]): Promise<void> {
         if (!data.target || typeof data.target.name !== 'string') throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
         const { name: _targetName, ...identity } = data.target;
         if (!targetSchema.safeParse(identity).success) throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
-        if (!isReportSelectionValid(data.cases, data.selection)) throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
+        if (!isReportSelectionValid(data.cases, data.selection)
+          || !data.cases.every((item: { status?: unknown }) => ['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error'].includes(item.status as string))) {
+          throw new Error(localized(locale, 'This is not a valid QA report.', '유효한 QA 리포트가 아닙니다.'));
+        }
         return data as QAReport;
       };
       const before = await load(arg), after = await load(second);

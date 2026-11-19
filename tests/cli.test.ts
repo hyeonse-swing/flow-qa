@@ -313,3 +313,22 @@ test('CLI compares archived reports whose bare roots differ only by one slash', 
     assert.match((await qa('compare', 'before', 'other')).stdout, /Suite, target or case selection differs/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+test('CLI compare rejects an unknown archived case status instead of reporting a transition', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-invalid-compare-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);
+  try {
+    const report = { suiteHash: 'a'.repeat(64), suiteId: 'suite', target: { name: 'site', url: 'http://127.0.0.1:43982' }, cases: [{ id: 'C1', status: 'passed' }] };
+    for (const name of ['before', 'after']) {
+      await mkdir(join(dir, name));
+      await writeFile(join(dir, name, 'qa-report.json'), JSON.stringify(name === 'before'
+        ? { ...report, cases: [{ id: 'C1', status: 'unknown' }] } : report));
+    }
+    await assert.rejects(qa('compare', 'before', 'after'), (error: unknown) => {
+      const result = error as { code: number; stdout: string; stderr: string };
+      assert.equal(result.code, 2);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /not a valid QA report/);
+      return true;
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
