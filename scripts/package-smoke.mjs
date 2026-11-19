@@ -168,7 +168,12 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   assert.equal(compared.comparison.current.status, 'passed');
   assert.deepEqual(compared.comparison.counts, { 'newly-failed': 0, 'now-passed': 0, changed: 0, unchanged: 3, added: 0, missing: 0 });
   assert.deepEqual(compared.comparison.warnings, []);
+  const installedStepComparison = compared.comparison.cases.find(item => item.id === 'TC-001')?.stepComparison;
+  assert.equal(installedStepComparison?.availability, 'compared', 'Installed runs must retain source links for authored steps.');
+  assert.equal(installedStepComparison?.lastCommonPassedStepIndex, 3);
+  assert.equal(installedStepComparison?.firstDifferenceStepIndex, undefined);
   assert.ok(compared.markdown.includes(report.runId) && compared.markdown.includes(finalState.lastRunId));
+  assert.match(compared.markdown, /Last common passed step: 4/);
   const koreanComparison = await fetch(url + comparisonRoute, { headers: { 'Accept-Language': 'ko' } });
   assert.equal(koreanComparison.status, 200);
   assert.match((await koreanComparison.json()).markdown, /비교/);
@@ -187,6 +192,19 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   await page.goto(url);
   await page.waitForFunction(() => document.querySelector('#connection-label').textContent.includes('connected'));
   await page.locator('[data-view="history"]').click();
+  await page.locator('#compare-baseline').selectOption(report.runId);
+  await page.locator('#compare-current').selectOption(finalState.lastRunId);
+  await page.locator('#compare-btn').click();
+  await page.waitForFunction(() => !document.querySelector('#comparison-json').disabled);
+  assert.match(await page.locator('.comparison-case').first().textContent(), /Last common passed step: 4/);
+  const installedDownload = async selector => {
+    const pending = page.waitForEvent('download');
+    await page.locator(selector).click();
+    return readFile(await (await pending).path(), 'utf8');
+  };
+  const installedComparisonJSON = JSON.parse(await installedDownload('#comparison-json'));
+  assert.equal(installedComparisonJSON.cases.find(item => item.id === 'TC-001').stepComparison.lastCommonPassedStepIndex, 3);
+  assert.match(await installedDownload('#comparison-md'), /Last common passed step: 4/);
   await page.locator(`#history-list [data-run-id="${failedFixture.runId}"] [data-action="view-report"]`).click();
   await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), failedFixture.runId);
   await page.locator('#report-case-sort').selectOption('duration-desc');

@@ -541,6 +541,37 @@
         if (entry.expected?.length) { const list = el('ul', 'compact-list'); for (const value of entry.expected) list.append(el('li', '', String(value))); section.append(el('p', '', t('app.expected')), list); }
         if (entry.reason) section.append(el('p', '', t('comparison.reason', { value: entry.reason })));
       }
+      const steps = item.stepComparison;
+      if (steps) {
+        for (const [side, attempt] of [[t('comparison.baseline'), steps.baselineAttempt], [t('comparison.current'), steps.currentAttempt]]) {
+          if (attempt) section.append(el('p', '', t('comparison.attempt', {
+            side, index: attempt.index, total: attempt.total, status: i18n.status(attempt.status),
+          })));
+        }
+        if (steps.availability === 'unavailable') {
+          section.append(el('p', 'comparison-step-unavailable', t('comparison.stepUnavailable', {
+            reason: t('comparison.stepReason.' + (steps.reason || 'record-incomplete')),
+          })));
+        } else {
+          section.append(el('p', '', t('comparison.setupCalls', {
+            baseline: steps.baselineSetupSteps, current: steps.currentSetupSteps,
+          })));
+          section.append(el('p', '', t('comparison.lastCommon', {
+            index: steps.lastCommonPassedStepIndex === undefined ? t('comparison.noCommon') : steps.lastCommonPassedStepIndex + 1,
+          })));
+          section.append(el('p', 'comparison-first-difference', t('comparison.firstDifference', {
+            index: steps.firstDifferenceStepIndex === undefined ? t('comparison.noDifference') : steps.firstDifferenceStepIndex + 1,
+          })));
+          const list = el('ol', 'comparison-step-list');
+          for (const step of steps.steps || []) {
+            const status = value => value === 'not-run' ? t('comparison.stepNotRun') : i18n.status(value);
+            list.append(el('li', '', t('comparison.stepResult', {
+              index: step.index + 1, type: step.type, baseline: status(step.baseline), current: status(step.current),
+            })));
+          }
+          section.append(list);
+        }
+      }
       host.append(section);
     }
     comparisonControls();

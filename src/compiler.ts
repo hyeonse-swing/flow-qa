@@ -44,7 +44,13 @@ export function needsAgent(suite: Suite): boolean {
   return suite.cases.some((testCase) => !testCase.questions.length && testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent'));
 }
 
-export function compileSuite(suite: Suite, target?: Target): string {
+export interface CompiledStepMap {
+  schemaVersion: 'flow-qa/step-map-1';
+  cases: Record<string, { setupLines: number[]; stepLines: number[][] }>;
+}
+
+/** Generated source lines are the only bridge from engine calls to authored steps. */
+export function compileSuiteWithStepMap(suite: Suite, target?: Target): { source: string; stepMap: CompiledStepMap } {
   const parsed = suiteSchema.parse(suite);
   const mobile = parsed.platform === 'mobile';
   // Android Settings may keep a system process alive after force-stop. The
@@ -54,11 +60,25 @@ export function compileSuite(suite: Suite, target?: Target): string {
   const launchApp = settings
     ? 'await device.home();\n  await device.openApp("com.android.settings");\n  if ((await device.foregroundApp()).bundleId !== "com.android.settings") throw new Error("Android Settings did not reach the foreground.");'
     : 'await app.open();';
-  const lines = [`import { test } from '${mobile ? '@e2e-dev/mobile' : '@e2e-dev/web'}';`, "import { expect } from 'e2e';", ''];
+  const lines: string[] = [];
+  const cases = Object.create(null) as CompiledStepMap['cases'];
+  let nextLine = 1;
+  const append = (code: string): number[] => {
+    const first = nextLine;
+    const count = code.split('\n').length;
+    lines.push(code);
+    nextLine += count;
+    return Array.from({ length: count }, (_, index) => first + index);
+  };
+  append(`import { test } from '${mobile ? '@e2e-dev/mobile' : '@e2e-dev/web'}';`);
+  append("import { expect } from 'e2e';");
+  append('');
   for (const testCase of parsed.cases) {
     const title = literal(`[${testCase.id}] ${testCase.title}`);
+    const locations = { setupLines: [] as number[], stepLines: [] as number[][] };
+    cases[testCase.id] = locations;
     if (testCase.questions.length) {
-      lines.push(`test.skip(${title}, async () => {});`);
+      append(`test.skip(${title}, async () => {});`);
       continue;
     }
     const fixtures = ['app'];
@@ -66,12 +86,16 @@ export function compileSuite(suite: Suite, target?: Target): string {
     if (testCase.steps.some((step) => 'locator' in step || step.type === 'swipe')) fixtures.push('screen');
     if (testCase.steps.some((step) => step.type === 'assertUrl')) fixtures.push('browser');
     if (testCase.steps.some((step) => step.type === 'act' || step.type === 'assertAgent')) fixtures.push('agent');
-    lines.push(`test(${title}, async ({ ${fixtures.join(', ')} }) => {`);
+    append(`test(${title}, async ({ ${fixtures.join(', ')} }) => {`);
     if (mobile) {
-      if (testCase.steps[0]?.type !== 'launchApp') lines.push(`  ${launchApp}`);
-    } else if (testCase.steps[0]?.type !== 'open') lines.push("  await app.open('/');");
-    for (const step of testCase.steps) lines.push(`  ${stepCode(step, launchApp)}`);
-    lines.push('});');
+      if (testCase.steps[0]?.type !== 'launchApp') locations.setupLines.push(...append(`  ${launchApp}`));
+    } else if (testCase.steps[0]?.type !== 'open') locations.setupLines.push(...append("  await app.open('/');"));
+    for (const step of testCase.steps) locations.stepLines.push(append(`  ${stepCode(step, launchApp)}`));
+    append('});');
   }
-  return `${lines.join('\n')}\n`;
+  return { source: `${lines.join('\n')}\n`, stepMap: { schemaVersion: 'flow-qa/step-map-1', cases } };
+}
+
+export function compileSuite(suite: Suite, target?: Target): string {
+  return compileSuiteWithStepMap(suite, target).source;
 }

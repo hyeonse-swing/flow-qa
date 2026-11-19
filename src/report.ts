@@ -1,10 +1,10 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { expectedChecks } from './compiler.ts';
+import { expectedChecks, type CompiledStepMap } from './compiler.ts';
 import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import { localized, localizeProductMessage, type Locale } from './i18n.ts';
-import { idSchema, type Suite } from './schema.ts';
+import { idSchema, type Step, type Suite } from './schema.ts';
 import { targetLabel, type ReportTarget } from './targets.ts';
 
 export type QAStatus = 'passed' | 'failed' | 'blocked' | 'error' | 'interrupted';
@@ -35,6 +35,8 @@ export interface QAAttempt {
     api: string;
     label: string;
     status: string;
+    sourceStepIndex?: number;
+    sourceSetup?: true;
     error?: QAError;
     model?: { provider: string; model: string; inputTokens: number; outputTokens: number; estimatedCostUsd?: number };
   }[];
@@ -46,6 +48,7 @@ export interface QACase {
   title: string;
   status: QACaseStatus;
   expected: string[];
+  definedSteps?: { type: Step['type'] }[];
   attempts: QAAttempt[];
   reason?: string;
 }
@@ -74,7 +77,8 @@ const archiveEnvelopeSchema = z.object({
   ]),
   startedAt: z.string(), finishedAt: z.string(), status: z.enum(['passed', 'failed', 'blocked', 'error', 'interrupted']),
   cases: z.array(z.object({ id: z.string(), title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
-    expected: z.array(z.string()), attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
+    expected: z.array(z.string()), definedSteps: z.array(z.object({ type: z.string() })).optional(),
+    attempts: z.array(z.unknown()), reason: z.string().optional() }).passthrough()),
   errors: z.array(z.string()), usage: z.object({ modelTokens: z.number(), modelCachedTokens: z.number().optional(), estimatedCostUsd: z.number().optional() }).optional(),
   selection: z.unknown().optional(),
 }).passthrough();
@@ -90,7 +94,8 @@ const savedAttemptSchema = z.object({
   index: z.number().int().nonnegative(), status: z.enum(['passed', 'failed', 'timed-out', 'interrupted', 'skipped']),
   startedAt: z.string(), durationMs: z.number().finite().nonnegative(),
   error: savedErrorSchema.optional(), secondaryErrors: z.array(savedErrorSchema),
-  steps: z.array(z.object({ api: z.string(), label: z.string(), status: z.string() })),
+  steps: z.array(z.object({ api: z.string(), label: z.string(), status: z.string(),
+    sourceStepIndex: z.number().int().nonnegative().optional(), sourceSetup: z.literal(true).optional() })),
   artifacts: z.array(z.object({ kind: z.string(), redaction: z.enum(['complete', 'not-required', 'incomplete']), path: z.string().optional() })),
 });
 const savedReportSchema = z.object({
@@ -98,7 +103,7 @@ const savedReportSchema = z.object({
   suiteHash: z.string().regex(/^[a-f0-9]{64}$/),
   cases: z.array(z.object({
     id: idSchema, title: z.string(), status: z.enum(['passed', 'failed', 'flaky', 'blocked', 'skipped', 'error']),
-    expected: z.array(z.string()), reason: z.string().optional(),
+    expected: z.array(z.string()), definedSteps: z.array(z.object({ type: z.string() })).optional(), reason: z.string().optional(),
     attempts: z.array(savedAttemptSchema),
   })),
   usage: z.object({ modelTokens: z.number().finite().nonnegative(), modelCachedTokens: z.number().finite().nonnegative().optional(), estimatedCostUsd: z.number().finite().nonnegative().optional() }).optional(),
@@ -110,6 +115,15 @@ export function isSavedReport(raw: unknown): raw is QAReport {
   const report = raw as QAReport;
   if (!isReportSelectionValid(report.cases, report.selection)) return false;
   for (const item of report.cases) {
+    if (item.definedSteps && (item.definedSteps.length === 0 || item.definedSteps.length > 100)) return false;
+    for (const attempt of item.attempts) {
+      const seen = new Set<number>();
+      for (const step of attempt.steps) {
+        if (step.sourceStepIndex === undefined) continue;
+        if (!item.definedSteps || step.sourceStepIndex >= item.definedSteps.length || step.sourceSetup || seen.has(step.sourceStepIndex)) return false;
+        seen.add(step.sourceStepIndex);
+      }
+    }
     if (item.status === 'passed' && (item.attempts.length !== 1 || item.attempts[0]?.index !== 0 || item.attempts[0]?.status !== 'passed')) return false;
     if (item.status === 'flaky' && (item.attempts.length < 2 || item.attempts.at(-1)?.status !== 'passed'
       || item.attempts.some((attempt, index) => attempt.index !== index || (index < item.attempts.length - 1 && !['failed', 'timed-out'].includes(attempt.status))))) return false;
@@ -133,6 +147,7 @@ export interface ReportContext {
   finishedAt: string;
   rawDir: string;
   testFile: string;
+  stepMap?: CompiledStepMap;
   blockedReasons: ReadonlyMap<string, string>;
   selection?: RunSelection;
 }
@@ -226,15 +241,23 @@ function localArtifactPath(rawPath: unknown, rawDir: string): string | undefined
   return `raw/artifacts/${parts.join('/')}`;
 }
 
-function normalizeAttempt(value: unknown, rawDir: string): QAAttempt {
+function normalizeAttempt(value: unknown, rawDir: string, location?: CompiledStepMap['cases'][string], sourceFile?: string): QAAttempt {
   const item = object(value, 'attempt');
   const steps = array(item.steps, 'attempt.steps').map((value) => {
     const step = object(value, 'step');
     const model = step.model === undefined ? undefined : object(step.model, 'step.model');
+    const source = step.source && typeof step.source === 'object' && !Array.isArray(step.source)
+      ? step.source as Record<string, unknown> : undefined;
+    const line = source && source.file === sourceFile && Number.isSafeInteger(source.line) && Number.isSafeInteger(source.column)
+      && (source.column as number) > 0 ? source.line as number : undefined;
+    const stepIndex = line === undefined ? -1 : location?.stepLines.findIndex((lines) => lines.includes(line)) ?? -1;
+    const sourceSetup = line !== undefined && location?.setupLines.includes(line);
     return {
       api: string(step.api, 'step.api'),
       label: string(step.label, 'step.label'),
       status: oneOf(step.status, ['passed', 'failed', 'blocked', 'timed-out', 'cancelled'], 'step.status'),
+      ...(stepIndex >= 0 ? { sourceStepIndex: stepIndex } : {}),
+      ...(sourceSetup ? { sourceSetup: true as const } : {}),
       ...(step.error === undefined ? {} : { error: rawError(step.error) }),
       ...(model === undefined ? {} : { model: {
         provider: string(model.provider, 'step.model.provider'),
@@ -245,6 +268,14 @@ function normalizeAttempt(value: unknown, rawDir: string): QAAttempt {
       } }),
     };
   });
+  const seen = new Set<number>();
+  const repeated = new Set<number>();
+  for (const step of steps) {
+    if (step.sourceStepIndex === undefined) continue;
+    if (seen.has(step.sourceStepIndex)) repeated.add(step.sourceStepIndex);
+    seen.add(step.sourceStepIndex);
+  }
+  for (const step of steps) if (step.sourceStepIndex !== undefined && repeated.has(step.sourceStepIndex)) delete (step as { sourceStepIndex?: number }).sourceStepIndex;
   const artifacts = array(item.artifacts, 'attempt.artifacts').map((value): QAArtifact => {
     const artifact = object(value, 'artifact');
     const redaction = oneOf(artifact.redaction, redactionStatuses, 'artifact.redaction');
@@ -303,7 +334,8 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
     }
     if (mapped.has(id)) throw new Error(`Duplicate test result in the raw report: ${id}`);
     const status = oneOf(result.status, resultStatuses, 'result.status');
-    const attempts = array(result.attempts, 'result.attempts').map((attempt) => normalizeAttempt(attempt, context.rawDir));
+    const attempts = array(result.attempts, 'result.attempts').map((attempt) =>
+      normalizeAttempt(attempt, context.rawDir, context.stepMap?.cases[id], sourceName));
     if (status !== 'skipped' && attempts.length === 0) throw new Error(`Test result has no attempts: ${id}`);
     const finalAttemptStatus = attempts.at(-1)?.status;
     if (status === 'passed' && (attempts.length !== 1 || attempts[0]?.index !== 0 || finalAttemptStatus !== 'passed')) {
@@ -327,11 +359,12 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
     const expected = expectedChecks(testCase);
     const result = mapped.get(testCase.id);
     const blockedReason = context.blockedReasons.get(testCase.id);
-    if (blockedReason !== undefined) return { id: testCase.id, title: testCase.title, status: 'blocked', expected, attempts: result?.attempts ?? [], reason: blockedReason };
-    if (result === undefined) return { id: testCase.id, title: testCase.title, status: 'error', expected, attempts: [], reason: 'The raw report has no result for this case.' };
+    const definedSteps = testCase.steps.map((step) => ({ type: step.type }));
+    if (blockedReason !== undefined) return { id: testCase.id, title: testCase.title, status: 'blocked', expected, definedSteps, attempts: result?.attempts ?? [], reason: blockedReason };
+    if (result === undefined) return { id: testCase.id, title: testCase.title, status: 'error', expected, definedSteps, attempts: [], reason: 'The raw report has no result for this case.' };
     const status = resultCaseStatus(result.status, result.attempts);
     const reason = status === 'blocked' ? result.attempts.at(-1)?.error?.message ?? result.reason : result.reason;
-    return { id: testCase.id, title: testCase.title, status, expected, attempts: result.attempts, ...(reason === undefined ? {} : { reason }) };
+    return { id: testCase.id, title: testCase.title, status, expected, definedSteps, attempts: result.attempts, ...(reason === undefined ? {} : { reason }) };
   });
   if (cases.some((item) => item.status === 'error' && !context.blockedReasons.has(item.id))) errors.push('One or more cases ended without a result or were interrupted.');
   const usage = object(run.usage, 'run.usage');
@@ -376,7 +409,7 @@ export function failureReport(context: Omit<ReportContext, 'rawDir' | 'testFile'
     cases: scopedCases(context).map((testCase) => ({
       id: testCase.id, title: testCase.title,
       status: context.blockedReasons.has(testCase.id) ? 'blocked' : 'error',
-      expected: expectedChecks(testCase), attempts: [],
+      expected: expectedChecks(testCase), definedSteps: testCase.steps.map((step) => ({ type: step.type })), attempts: [],
       reason: context.blockedReasons.get(testCase.id) ?? error,
     })),
     errors: [error], ...reportSelection(context),

@@ -36,6 +36,7 @@ jobs:
       - run: npm run check
       - run: npm run qa -- browser install --with-deps
       - run: npm run demo:smoke
+      - run: npm run smoke:steps
       - run: npm run smoke:ui
       - run: npm run check:package
       - run: npm run smoke:package
@@ -45,6 +46,8 @@ jobs:
           name: release-verification-${{ matrix.os }}-node${{ matrix.node }}
           path: |
             output/package/*.json
+            output/step-comparison-smoke/*.json
+            output/step-comparison-smoke/*.md
             output/playwright/preferences/result.json
             output/playwright/i18n/result.json
             output/playwright/comparison/result.json

@@ -5,7 +5,7 @@ import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectCases } from './case-selection.ts';
-import { compileSuite } from './compiler.ts';
+import { compileSuiteWithStepMap, type CompiledStepMap } from './compiler.ts';
 import { acquireMobileDevice, checkMobileApp, mobileReadiness, type CheckMobileApp, type ListMobileDevices } from './mobile-runtime.ts';
 import { failureReport, normalizeReport1, renderMarkdown, stoppedReport, type QAReport } from './report.ts';
 import { configSchema, suiteSchema, type Config, type Suite, type Target } from './schema.ts';
@@ -40,12 +40,12 @@ function packageModule(specifier: string): string {
   return import.meta.resolve(specifier);
 }
 
-function compiledTest(suite: Suite, target: Target): string {
-  const source = compileSuite(suite, target);
-  return source
+function compiledTest(suite: Suite, target: Target): { source: string; stepMap: CompiledStepMap } {
+  const compiled = compileSuiteWithStepMap(suite, target);
+  return { ...compiled, source: compiled.source
     .replace("from '@e2e-dev/web'", `from ${JSON.stringify(packageModule('@e2e-dev/web'))}`)
     .replace("from '@e2e-dev/mobile'", `from ${JSON.stringify(packageModule('@e2e-dev/mobile'))}`)
-    .replace("from 'e2e'", `from ${JSON.stringify(packageModule('e2e'))}`);
+    .replace("from 'e2e'", `from ${JSON.stringify(packageModule('e2e'))}`) };
 }
 
 function generatedConfig(suite: Suite, config: Config, targetName: string, agentAvailable: boolean, runId: string, sdkDevice?: string): string {
@@ -192,6 +192,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
   let blocked = new Map<string, string>();
   let target: ReportTarget = { name: options.targetName, url: '' };
   let releaseMobileDevice: (() => void) | undefined;
+  let stepMap: CompiledStepMap | undefined;
   const context = () => ({ suite: executionSuite, selection, runId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
   const blockAll = (suite: Suite, reason: string): never => {
     for (const testCase of suite.cases) if (!blocked.has(testCase.id)) blocked.set(testCase.id, reason);
@@ -236,7 +237,10 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
     const testFile = path.join(runDir, TEST_FILE);
     const configFile = path.join(runDir, CONFIG_FILE);
     const agentAvailable = runnable.some(agentCase);
-    await writeFile(testFile, compiledTest(executable, selectedTarget), { mode: 0o600 });
+    const compiled = compiledTest(executable, selectedTarget);
+    stepMap = compiled.stepMap;
+    await writeFile(testFile, compiled.source, { mode: 0o600 });
+    await writeFile(path.join(runDir, 'step-map.json'), `${JSON.stringify({ ...stepMap, suiteHash }, null, 2)}\n`, { mode: 0o600 });
     await writeFile(configFile, generatedConfig(suite, config, options.targetName, agentAvailable, runId, sdkDevice), { mode: 0o600 });
     if (options.signal?.aborted) {
       report = failureReport(context(), 'interrupted', 'An interrupt signal arrived before the run started.');
@@ -256,7 +260,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
       catch (error) { readError = error instanceof Error ? error.message : String(error); }
       if (raw !== undefined) {
         try {
-          const reportContext = { ...context(), rawDir: path.join(runDir, 'raw'), testFile };
+          const reportContext = { ...context(), rawDir: path.join(runDir, 'raw'), testFile, stepMap };
           report = reason === undefined ? normalizeReport1(raw, reportContext)
             : stoppedReport(raw, reportContext, child.interrupted ? 'interrupted' : 'error', reason);
         }

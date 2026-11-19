@@ -18,7 +18,21 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  const makeCase = (id, status) => ({ id, title: id === 'A' ? '<img src=x onerror=alert(1)> 케이스' : `Case ${id}`, status, expected: ['Expected outcome'], attempts: [] });
+  const makeCase = (id, status) => ({
+    id, title: id === 'A' ? '<img src=x onerror=alert(1)> 케이스' : `Case ${id}`,
+    status, expected: ['Expected outcome'],
+    ...(id === 'A' ? {
+      definedSteps: [{ type: 'assertText' }, { type: 'open' }, { type: 'assertText' }, { type: 'assertVisible' }],
+      attempts: [{ index: 0, status, startedAt: '2026-11-01T00:00:00.000Z', durationMs: 1, secondaryErrors: [], artifacts: [],
+        steps: [
+          { api: 'app.open', label: 'setup', status: 'passed', sourceSetup: true },
+          { api: 'expect.toHaveText', label: 'same assertion', status: 'passed', sourceStepIndex: 0 },
+          { api: 'app.open', label: 'action', status: 'passed', sourceStepIndex: 1 },
+          { api: 'expect.toHaveText', label: 'same assertion', status: status, sourceStepIndex: 2 },
+          ...(status === 'passed' ? [{ api: 'expect.toBeVisible', label: 'last', status: 'passed', sourceStepIndex: 3 }] : []),
+        ] }],
+    } : { attempts: [] }),
+  });
   const baseline = {
     schemaVersion: 'flow-qa/report-1', runId: randomUUID(), suiteId: 'comparison-demo', suiteHash: 'a'.repeat(64),
     target: { name: '로컬 QA', url: 'http://127.0.0.1:3000' }, startedAt: '2026-11-01T00:00:00.000Z', finishedAt: '2026-11-01T00:01:00.000Z', status: 'failed', errors: [],
@@ -72,17 +86,22 @@ try {
   assert.deepEqual(initial.counts, expectedCounts);
   assert.equal(initial.baseline.runId, baseline.runId);
   assert.equal(initial.current.runId, current.runId);
+  assert.equal(initial.cases.find(item => item.id === 'A').stepComparison.firstDifferenceStepIndex, 2);
+  assert.equal(initial.cases.find(item => item.id === 'A').stepComparison.steps[3].current, 'not-run');
+  assert.match(await page.locator('.comparison-case[data-category="newly-failed"]').textContent(), /First differing step: 3/);
   await page.locator('#comparison-filter').selectOption('newly-failed');
   assert.equal(await page.locator('.comparison-case').count(), 1);
   assert.equal(JSON.parse((await download('#comparison-json')).text).cases.length, 9, 'Export includes all categories despite display filter.');
   const english = (await download('#comparison-md')).text;
   assert.ok(english.includes(baseline.runId) && english.includes(current.runId));
+  assert.match(english, /First differing step: 3/);
   await page.locator('#language-select').selectOption('ko');
   assert.equal(await page.locator('#comparison-filter').inputValue(), 'newly-failed');
   assert.equal(await page.locator('.comparison-case').count(), 1);
   const korean = (await download('#comparison-md')).text;
   assert.notEqual(korean, english, 'Markdown follows the current UI language.');
   assert.match(korean, /비교/);
+  assert.match(korean, /첫 결과 차이 단계: 3/);
   await page.locator('#compare-open-current').click();
   await page.locator('#report-content .case-report').first().waitFor();
   const reportHeading = await page.locator('#report-heading').textContent();

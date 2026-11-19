@@ -1,6 +1,7 @@
 import { localized, type Locale } from './i18n.ts';
 import { isReportSelectionValid, type RunSelection } from './case-selection.ts';
 import type { QACase, QACaseStatus, QAReport, QAStatus } from './report.ts';
+import { compareCaseSteps, type StepComparison, type StepComparisonReason } from './step-comparison.ts';
 import { sameReportTarget, targetLabel, type ReportTarget } from './targets.ts';
 
 export const comparisonCategories = ['newly-failed', 'now-passed', 'changed', 'unchanged', 'added', 'missing'] as const;
@@ -30,6 +31,7 @@ export interface ComparisonCase {
   category: ComparisonCategory;
   baseline: ComparisonCaseSnapshot | null;
   current: ComparisonCaseSnapshot | null;
+  stepComparison: StepComparison;
 }
 
 export interface RunComparison {
@@ -83,7 +85,7 @@ function category(baseline: QACase | undefined, current: QACase | undefined): Co
   return 'changed';
 }
 
-/** Compare only recorded final case statuses and report metadata. Never inspect attempts or artifacts. */
+/** Keep final-status categories stable and add conservative authored-step evidence. */
 export function compareReports(baseline: QAReport, current: QAReport): RunComparison {
   if (baseline.runId === current.runId) throw new ComparisonError(400, 'A comparison needs two different runs.');
   if (baseline.suiteId !== current.suiteId) throw new ComparisonError(409, 'Both reports must belong to the same suite.');
@@ -115,7 +117,8 @@ export function compareReports(baseline: QAReport, current: QAReport): RunCompar
     const currentCase = after.get(id);
     const transition = category(baselineCase, currentCase);
     counts[transition]++;
-    return { id, category: transition, baseline: caseSnapshot(baselineCase), current: caseSnapshot(currentCase) };
+    return { id, category: transition, baseline: caseSnapshot(baselineCase), current: caseSnapshot(currentCase),
+      stepComparison: compareCaseSteps(baselineCase, currentCase, baseline.suiteHash === current.suiteHash) };
   });
   return { schemaVersion: 'flow-qa/comparison-1', baseline: runSummary(baseline), current: runSummary(current), warnings, counts, cases };
 }
@@ -161,6 +164,17 @@ export function renderComparisonMarkdown(comparison: RunComparison, locale: Loca
     'incomplete-run': label('At least one run ended with error or interruption; case results may be incomplete.', '하나 이상의 실행이 오류 또는 중단으로 끝나 케이스 결과가 불완전할 수 있습니다.'),
     'mobile-identity-unverified': label('The recorded app and device settings match, but these reports do not verify that both runs used the same physical device.', '기록된 앱과 기기 설정은 같지만, 두 실행이 같은 실제 기기에서 진행됐는지는 이 리포트로 확인할 수 없습니다.'),
   };
+  const stepReasons: Record<StepComparisonReason, string> = {
+    'suite-changed': label('Suite definitions differ.', '케이스 모음 정의가 다릅니다.'),
+    'case-absent': label('The case is absent from one run.', '한쪽 실행에 케이스 기록이 없습니다.'),
+    'definition-unavailable': label('Authored step definitions are unavailable.', '원본 단계 정의 기록이 없습니다.'),
+    'definition-changed': label('Recorded step definitions differ.', '기록된 단계 정의가 다릅니다.'),
+    'attempt-unavailable': label('An execution attempt is missing.', '실행 시도 기록이 없습니다.'),
+    'step-unlinked': label('An engine step has no verified authored-step link.', '원본 단계와 연결할 수 없는 엔진 기록이 있습니다.'),
+    'step-ambiguous': label('The step links are duplicated or out of order.', '단계 연결이 중복되거나 순서가 맞지 않습니다.'),
+    'record-incomplete': label('The attempt lacks enough ordered step evidence.', '시도 기록에 순서대로 연결된 단계 근거가 부족합니다.'),
+    'setup-failed': label('The generated setup step failed.', '생성된 준비 단계가 실패했습니다.'),
+  };
   const lines = [
     `# ${label('QA run comparison', 'QA 실행 비교')}`,
     '',
@@ -188,6 +202,21 @@ export function renderComparisonMarkdown(comparison: RunComparison, locale: Loca
       lines.push(`- ${name}: ${safe(entry.status)} · ${safe(entry.title)}`);
       lines.push(`  - ${label('Expected', '기대 결과')}: ${entry.expected.length ? entry.expected.map(safe).join('; ') : label('None', '없음')}`);
       if (entry.reason !== undefined) lines.push(`  - ${label('Reason', '실행 상태 근거')}: ${safe(entry.reason)}`);
+    }
+    const steps = item.stepComparison;
+    for (const [name, attempt] of [[label('Baseline attempt', '기준 시도'), steps.baselineAttempt],
+      [label('Current attempt', '현재 시도'), steps.currentAttempt]] as const) {
+      if (attempt) lines.push(`- ${name}: ${attempt.index}/${attempt.total} · ${safe(attempt.status)}`);
+    }
+    if (steps.availability === 'unavailable') {
+      lines.push(`- ${label('Step comparison unavailable', '단계 비교 불가')}: ${stepReasons[steps.reason ?? 'record-incomplete']}`);
+    } else {
+      lines.push(`- ${label('Generated setup calls', '생성된 준비 호출')}: ${steps.baselineSetupSteps ?? 0} → ${steps.currentSetupSteps ?? 0}`);
+      lines.push(`- ${label('Last common passed step', '마지막 공통 성공 단계')}: ${steps.lastCommonPassedStepIndex === undefined ? label('None', '없음') : steps.lastCommonPassedStepIndex + 1}`);
+      lines.push(`- ${label('First differing step', '첫 결과 차이 단계')}: ${steps.firstDifferenceStepIndex === undefined ? label('None', '없음') : steps.firstDifferenceStepIndex + 1}`);
+      for (const step of steps.steps ?? []) {
+        lines.push(`  - ${step.index + 1}. ${safe(step.type)}: ${safe(step.baseline)} → ${safe(step.current)}`);
+      }
     }
     lines.push('');
   }

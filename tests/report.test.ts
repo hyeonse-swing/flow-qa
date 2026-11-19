@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { compileSuiteWithStepMap } from '../src/compiler.ts';
 import { failureReport, isSavedReport, normalizeReport1, renderMarkdown, renderSavedMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
 
@@ -50,6 +51,52 @@ test('shows possible causes only when the run did not pass', () => {
   assert.match(renderMarkdown(failed), /## Possible causes\n\nThe observed evidence alone does not establish the cause/);
   assert.match(renderMarkdown(failed, 'ko'), /## 가능한 원인\n\n실패의 원인은/);
   assert.match(renderMarkdown(failureReport(reportContext, 'error', 'No raw report')), /## Possible causes/);
+});
+
+test('saved reports validate optional authored step links and keep old records readable', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const reportContext: ReportContext = { ...context(root), runId: '0192f3a0-0000-7000-8000-000000000001',
+    suite: { ...suite, cases: [suite.cases[0]!] }, blockedReasons: new Map() };
+  const report = normalizeReport1(raw([result('A', 'failed', [attempt(0, 'failed')])]), reportContext);
+  assert.equal(isSavedReport(report), true);
+  const linked = structuredClone(report);
+  linked.cases[0]!.attempts[0]!.steps[0]!.sourceStepIndex = 0;
+  assert.equal(isSavedReport(linked), true);
+  linked.cases[0]!.attempts[0]!.steps[0]!.sourceSetup = true;
+  assert.equal(isSavedReport(linked), false);
+  delete linked.cases[0]!.attempts[0]!.steps[0]!.sourceSetup;
+  linked.cases[0]!.attempts[0]!.steps[0]!.sourceStepIndex = 1;
+  assert.equal(isSavedReport(linked), false);
+  linked.cases[0]!.attempts[0]!.steps[0]!.sourceStepIndex = 0;
+  linked.cases[0]!.attempts[0]!.steps.push({ api: 'expect.toHaveURL', label: 'duplicate', status: 'passed', sourceStepIndex: 0 });
+  assert.equal(isSavedReport(linked), false);
+  delete report.cases[0]!.definedSteps;
+  assert.equal(isSavedReport(report), true);
+});
+
+test('normalization links only exact generated source lines and drops duplicate links', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const oneCase = { ...suite, cases: [suite.cases[0]!] };
+  const stepMap = compileSuiteWithStepMap(oneCase).stepMap;
+  const locations = stepMap.cases.A!;
+  const reportContext: ReportContext = { ...context(root), suite: oneCase, stepMap, blockedReasons: new Map() };
+  const source = (line: number, file = 'suite.e2e.ts', column = 3) => ({ file, line, column });
+  const engineStep = (status: 'passed' | 'failed', location: ReturnType<typeof source>) =>
+    ({ api: 'expect.toHaveURL', label: 'same label', status, source: location });
+  const record = (steps: unknown[]) => normalizeReport1(raw([result('A', 'failed', [{ ...attempt(0, 'failed'), steps }])]), reportContext);
+  const setup = engineStep('passed', source(locations.setupLines[0]!));
+  const authored = engineStep('failed', source(locations.stepLines[0]![0]!));
+  const linked = record([setup, authored]);
+  assert.equal(linked.cases[0]!.attempts[0]!.steps[0]!.sourceSetup, true);
+  assert.equal(linked.cases[0]!.attempts[0]!.steps[1]!.sourceStepIndex, 0);
+  const duplicate = record([setup, authored, authored]);
+  assert.equal(duplicate.cases[0]!.attempts[0]!.steps[1]!.sourceStepIndex, undefined);
+  assert.equal(duplicate.cases[0]!.attempts[0]!.steps[2]!.sourceStepIndex, undefined);
+  assert.equal(isSavedReport({ ...duplicate, runId: '0192f3a0-0000-7000-8000-000000000001' }), true);
+  const unknown = record([setup, engineStep('failed', source(locations.stepLines[0]![0]!, 'other.e2e.ts'))]);
+  assert.equal(unknown.cases[0]!.attempts[0]!.steps[1]!.sourceStepIndex, undefined);
+  const invalidColumn = record([setup, engineStep('failed', source(locations.stepLines[0]![0]!, 'suite.e2e.ts', 0))]);
+  assert.equal(invalidColumn.cases[0]!.attempts[0]!.steps[1]!.sourceStepIndex, undefined);
 });
 
 test('retains failed and flaky attempts, blocked questions, usage, and only safe local evidence links', () => {

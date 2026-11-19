@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import ts from 'typescript';
-import { compileSuite, expectedChecks, needsAgent } from '../src/compiler.ts';
+import { compileSuite, compileSuiteWithStepMap, expectedChecks, needsAgent } from '../src/compiler.ts';
 import type { Suite, Target } from '../src/schema.ts';
 
 const hostile = 'x" ); process.exit(1); //\n` ${danger}';
@@ -52,6 +52,25 @@ test('compiler honors an explicit first open and detects only runnable agent ste
   assert.equal(needsAgent(suite), false);
   assert.equal(expectedChecks(withOpen.cases[0]!).length, 1);
   assert.deepEqual(expectedChecks(suite.cases[0]!).map((value) => value.split(':')[0]), ['Text contains', 'Hidden', 'URL']);
+});
+
+test('step map keeps repeated assertions, implicit setup, and special case IDs distinct', () => {
+  const repeated: Suite = { ...suite, cases: [{ ...suite.cases[0]!, id: 'constructor', title: 'Repeated', steps: [
+    { type: 'assertText', locator: { by: 'testId', value: 'message' }, expected: 'Ready', match: 'equals' },
+    { type: 'click', locator: { by: 'role', value: 'button', name: 'Next' } },
+    { type: 'assertText', locator: { by: 'testId', value: 'message' }, expected: 'Ready', match: 'equals' },
+  ] }] };
+  const { source, stepMap } = compileSuiteWithStepMap(repeated);
+  const locations = stepMap.cases['constructor' as string];
+  assert.ok(Object.hasOwn(stepMap.cases, 'constructor'));
+  assert.equal(locations?.setupLines.length, 1);
+  assert.equal(locations?.stepLines.length, 3);
+  const generatedLines = source.split('\n');
+  assert.match(generatedLines[locations!.setupLines[0]! - 1]!, /app\.open/);
+  assert.match(generatedLines[locations!.stepLines[0]![0]! - 1]!, /toHaveText/);
+  assert.match(generatedLines[locations!.stepLines[2]![0]! - 1]!, /toHaveText/);
+  assert.notEqual(locations!.stepLines[0]![0], locations!.stepLines[2]![0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(stepMap)).cases.constructor, locations);
 });
 
 test('descriptive preconditions run when steps establish them; questions block', () => {

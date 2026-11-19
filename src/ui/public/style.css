@@ -178,6 +178,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .comparison-count span { color: var(--muted); font-size: 12px; }
 .comparison-filter-row { max-width: 320px; }
 #comparison-content, .comparison-panel { min-width: 0; }
+.comparison-first-difference { font-weight: 700; color: var(--ink) !important; }
+.comparison-step-list { margin: 8px 0 0; padding-left: 24px; color: var(--ink); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.comparison-step-unavailable { color: var(--accent-text) !important; }
 .report-panel .actions { margin-bottom: 25px; }
 .report-meta { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 23px; }
 .report-meta span { padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--radius-control); font-size: 12px; }
