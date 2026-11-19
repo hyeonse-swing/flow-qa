@@ -1,5 +1,11 @@
 # Releases and verification
 
+## 0.9.13 — Hyeonse Design System 0.4.8
+
+The local UI now uses Hyeonse Design System 0.4.8 tokens, CSS controls, and preference helpers. The build copies only the two CSS files, the preference module, and the design system's MIT license into the Flow QA npm tarball. Installed consumers do not fetch the design-system archive or need Git for it. The included font files retain their original source and licenses.
+
+On 2026-11-19, local Node.js 24.22.3 checks passed: 140 tests, type checking, UI syntax and design-system audit, all eight Chromium UI smoke scripts, and the installed-tarball smoke with three real runs. The package check found 46 files, a 257,876-byte tarball, and no bundled dependency packages. The temporary consumer had Git blocked and no installed design-system package; the local UI served byte-identical copies of the three design-system assets. This does not establish behavior on a physical device or in another service.
+
 ## 0.9.10 — Archived report comparison
 
 `flow-qa compare` rejects an archived case with an unknown status instead of showing it as a normal transition. The English and Korean installation examples use the current public release.

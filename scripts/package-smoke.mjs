@@ -47,6 +47,12 @@ try {
   const metadata = JSON.parse(await readFile(path.join(installed, 'package.json'), 'utf8'));
   assert.equal(metadata.name, expected.name, 'Installed package name must match this release.');
   assert.equal(metadata.version, expected.version, 'Installed package version must match this release.');
+  assert.equal(Object.hasOwn(metadata.dependencies ?? {}, '@hyeonse/design-system'), false, 'Installed consumers must not fetch the design-system source archive.');
+  await assert.rejects(stat(path.join(consumer, 'node_modules', '@hyeonse', 'design-system')), { code: 'ENOENT' });
+  const designSystemAssets = path.join(installed, 'dist', 'src', 'ui', 'design-system');
+  for (const asset of ['tokens.css', 'components.css', 'preferences.js', 'LICENSE']) {
+    assert.ok((await stat(path.join(designSystemAssets, asset))).isFile(), `Missing copied design-system asset: ${asset}`);
+  }
   const shim = path.join(consumer, 'node_modules', '.bin', process.platform === 'win32' ? 'flow-qa.cmd' : 'flow-qa');
   assert.ok((await stat(shim)).isFile(), 'npm must install the documented flow-qa command.');
   if (process.platform !== 'win32') assert.equal(await realpath(shim), await realpath(bin));
@@ -123,7 +129,12 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   assert.match(html, /Flow QA/);
   assert.match(html, /<html lang="en"/);
   await get('/i18n.js');
-  await get('/design-system/tokens.css'); await get('/design-system/preferences.js'); await get('/fonts/dm-sans.woff2');
+  for (const asset of ['tokens.css', 'components.css', 'preferences.js']) {
+    const served = Buffer.from(await (await get(`/design-system/${asset}`)).arrayBuffer());
+    assert.deepEqual(served, await readFile(path.join(designSystemAssets, asset)), `Installed UI must serve the copied ${asset}.`);
+  }
+  assert.match(await (await get('/design-system/init.js')).text(), /flowqa-display-preferences/);
+  await get('/fonts/dm-sans.woff2');
   const state = await (await get('/api/state')).json();
   const suite = await (await get('/api/suite?file=task-flow.json')).json();
   const response = await fetch(url + '/api/run', { method: 'POST', headers: { 'content-type': 'application/json', 'x-flowqa-token': state.csrfToken }, body: JSON.stringify({ suite: 'task-flow.json', suiteHash: suite.suiteHash, targetName: 'demo', targetURL: state.targets[0].url }) });

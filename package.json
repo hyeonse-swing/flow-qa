@@ -1,6 +1,6 @@
 {
   "name": "@ihyeon/flow-qa",
-  "version": "0.9.12",
+  "version": "0.9.13",
   "license": "MIT",
   "author": "Hyeonse Im",
   "repository": {
@@ -34,9 +34,6 @@
     "THIRD_PARTY_NOTICES.md",
     "README.ko.md"
   ],
-  "bundleDependencies": [
-    "@hyeonse/design-system"
-  ],
   "description": "Turn user flows into repeatable tests and evidence-backed QA reports.",
   "type": "module",
   "engines": {
@@ -65,7 +62,6 @@
     "@ai-sdk/openai-compatible": "3.0.53",
     "@e2e-dev/mobile": "0.12.5",
     "@e2e-dev/web": "0.11.1",
-    "@hyeonse/design-system": "https://codeload.github.com/hyeonse-swing/hyeonse-design-system/tar.gz/38978c6a86f422fc0e63e919f600bc2dd3451e5c",
     "agent-device": "0.21.35",
     "ai": "7.0.107",
     "e2e": "0.22.0",
@@ -73,6 +69,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@hyeonse/design-system": "https://design-system.hyeonse.dev/releases/hyeonse-design-system-0.4.8.tgz",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   }

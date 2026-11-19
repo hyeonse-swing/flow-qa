@@ -3,9 +3,8 @@ import { constants } from 'node:fs';
 import { access, chmod, lstat, mkdir, open, readdir, realpath, rename, stat, unlink } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { chromium } from 'playwright';
 import { compileSuite } from '../compiler.ts';
 import { CaseSelectionError, isReportSelectionValid, selectCases } from '../case-selection.ts';
@@ -40,7 +39,15 @@ type RunCandidate = { id: string; mtime: number };
 type RunSummary = { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
   caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] };
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
-const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(MODULE_DIR, 'public');
+const IS_BUILT = import.meta.url.endsWith('.js');
+const designSystemAsset = (name: 'tokens.css' | 'components.css' | 'preferences') => IS_BUILT
+  ? path.join(MODULE_DIR, 'design-system', name === 'preferences' ? 'preferences.js' : name)
+  : fileURLToPath(import.meta.resolve(`@hyeonse/design-system/${name}`));
+const preferenceModule = (await import(IS_BUILT
+  ? pathToFileURL(designSystemAsset('preferences')).href
+  : '@hyeonse/design-system/preferences')) as typeof import('@hyeonse/design-system/preferences');
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: path.join(PUBLIC_DIR, 'index.html'), type: 'text/html; charset=utf-8' },
   '/index.html': { file: path.join(PUBLIC_DIR, 'index.html'), type: 'text/html; charset=utf-8' },
@@ -48,13 +55,13 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/display.js': { file: path.join(PUBLIC_DIR, 'display.js'), type: 'application/javascript; charset=utf-8' },
   '/i18n.js': { file: path.join(PUBLIC_DIR, 'i18n.js'), type: 'application/javascript; charset=utf-8' },
   '/style.css': { file: path.join(PUBLIC_DIR, 'style.css'), type: 'text/css; charset=utf-8' },
-  '/design-system/tokens.css': { file: fileURLToPath(import.meta.resolve('@hyeonse/design-system/tokens.css')), type: 'text/css; charset=utf-8' },
-  '/design-system/components.css': { file: fileURLToPath(import.meta.resolve('@hyeonse/design-system/components.css')), type: 'text/css; charset=utf-8' },
-  '/design-system/preferences.js': { file: fileURLToPath(import.meta.resolve('@hyeonse/design-system/preferences')), type: 'application/javascript; charset=utf-8' },
+  '/design-system/tokens.css': { file: designSystemAsset('tokens.css'), type: 'text/css; charset=utf-8' },
+  '/design-system/components.css': { file: designSystemAsset('components.css'), type: 'text/css; charset=utf-8' },
+  '/design-system/preferences.js': { file: designSystemAsset('preferences'), type: 'application/javascript; charset=utf-8' },
   '/fonts/dm-sans.woff2': { file: path.join(PUBLIC_DIR, 'fonts', 'dm-sans.woff2'), type: 'font/woff2' },
   '/fonts/noto-kr-subset.woff2': { file: path.join(PUBLIC_DIR, 'fonts', 'noto-kr-subset.woff2'), type: 'font/woff2' },
 };
-const INIT_SCRIPT = createPreferenceScript('flowqa-display-preferences');
+const INIT_SCRIPT = preferenceModule.createPreferenceScript('flowqa-display-preferences');
 
 class HTTPError extends Error {
   readonly status: number;
