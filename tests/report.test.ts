@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { compileSuiteWithStepMap } from '../src/compiler.ts';
-import { failureReport, isSavedReport, normalizeReport1, renderMarkdown, renderSavedMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
+import { failureReport, isSavedReport, normalizeReport1, parseArchivedReportEnvelope, renderMarkdown, renderSavedMarkdown, stoppedReport, type ReportContext } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
 
 const suite: Suite = {
@@ -51,6 +51,21 @@ test('shows possible causes only when the run did not pass', () => {
   assert.match(renderMarkdown(failed), /## Possible causes\n\nThe observed evidence alone does not establish the cause/);
   assert.match(renderMarkdown(failed, 'ko'), /## 가능한 원인\n\n실패의 원인은/);
   assert.match(renderMarkdown(failureReport(reportContext, 'error', 'No raw report')), /## Possible causes/);
+});
+
+test('optional rerun ancestry survives archive parsing and localized report rendering', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-report-'));
+  const parentRunId = '0192f3a0-0000-7000-8000-000000000002';
+  const report = failureReport({ ...context(root), runId: '0192f3a0-0000-7000-8000-000000000001',
+    parentRunId, blockedReasons: new Map() }, 'error', 'Stopped');
+  assert.equal(parseArchivedReportEnvelope(report)?.parentRunId, parentRunId);
+  assert.equal(isSavedReport(report), true);
+  assert.match(renderSavedMarkdown(report, 'old markdown', 'en'), /Prepared from run/);
+  assert.match(renderSavedMarkdown(report, 'old markdown', 'ko'), /재실행 원본/);
+  assert.equal(parseArchivedReportEnvelope({ ...report, parentRunId: report.runId }), undefined);
+  assert.equal(parseArchivedReportEnvelope({ ...report, parentRunId: '../other' }), undefined);
+  const legacy = { ...report }; delete legacy.parentRunId;
+  assert.equal(parseArchivedReportEnvelope(legacy)?.parentRunId, undefined);
 });
 
 test('saved reports validate optional authored step links and keep old records readable', () => {

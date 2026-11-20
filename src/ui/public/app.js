@@ -5,7 +5,7 @@
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
   const defaultReportFilter = () => ({ search: '', status: 'all', sort: 'recorded', repeatedOnly: false });
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportParent: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -109,6 +109,7 @@
     const ready = !!app.draft && !!app.script && !app.stale && !app.dirty;
     $('run-btn').disabled = !app.connected || !ready || !app.savedFile || !app.savedHash || !selectedCases().length || !$('review-checkbox').checked || !compatibleTarget() || !!active || app.busy;
     updateCaseSelection();
+    renderRerunHints();
     $('save-btn').disabled = !ready || app.busy;
     $('suite-download').disabled = !canDownloadSavedCases();
     $('flow-download').disabled = !canDownloadSourceMarkdown();
@@ -253,9 +254,18 @@
   }
   function renderRerunHints() {
     $('rerun-origin-hint').hidden = !app.rerunOrigin;
-    if (app.rerunOrigin) $('rerun-origin-hint').textContent = t('app.rerunPrepared', app.rerunOrigin);
+    if (app.rerunOrigin) $('rerun-origin-hint').textContent = t(canLinkRerun() ? 'app.rerunPrepared' : 'app.rerunChanged', app.rerunOrigin);
     $('rerun-target-hint').hidden = !app.rerunTargetMismatch;
     if (app.rerunTargetMismatch) $('rerun-target-hint').textContent = t('app.rerunTargetMismatch');
+  }
+  function canLinkRerun() {
+    const origin = app.rerunOrigin;
+    const target = selectedTarget();
+    const caseIds = selectedCases().map((item) => item.id);
+    return !!origin && !app.dirty && !app.stale && app.savedFile === origin.file &&
+      app.savedHash === origin.suiteHash && target?.name === origin.targetName &&
+      target.targetFingerprint === origin.targetFingerprint &&
+      caseIds.length === origin.caseIds.length && caseIds.every((id, index) => id === origin.caseIds[index]);
   }
   function modelDescription(role) {
     const model = app.state?.models?.[role] || {};
@@ -679,7 +689,22 @@
     noticeKey('app.compileComplete');
   }); }
   async function save() { await work(async () => { if (!app.draft || app.dirty || app.stale) throw localizedError('app.needValidated'); const body = { suite: app.draft }; if (!app.boundSource && app.sourceFlow && (app.origin === 'imported' ? editableFlow(app.sourceFlow) === $('flow-input').value : app.sourceFlow === $('flow-input').value.trim())) body.flow = app.sourceFlow; const result = await api('/api/save', body); const saved = await api(`/api/suite?file=${encodeURIComponent(result.file)}`); $('flow-input').value = saved.flow || ''; setDraft(saved.suite, saved.script, 'library', saved.flow || '', result.file, saved.suiteHash || ''); noticeKey('app.savedSuite', { file: result.file }); await refresh(false); }); }
-  async function run() { await work(async () => { if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale || !selectedCases().length || !$('review-checkbox').checked || !compatibleTarget()) throw localizedError('app.runNotReady'); const target = selectedTarget(); const body = { suite: app.savedFile, suiteHash: app.savedHash, targetName: target.name, targetFingerprint: target.targetFingerprint }; if (selectedCases().length < app.draft.cases.length) body.caseIds = selectedCases().map((item) => item.id); const result = await api('/api/run', body); noticeKey('app.runStarted', { id: result.operationId }); await refresh(false); }); }
+  async function run() {
+    await work(async () => {
+      if (!app.draft || !app.script || !app.savedFile || !app.savedHash || app.dirty || app.stale ||
+        !selectedCases().length || !$('review-checkbox').checked || !compatibleTarget()) {
+        throw localizedError('app.runNotReady');
+      }
+      const target = selectedTarget();
+      const body = { suite: app.savedFile, suiteHash: app.savedHash,
+        targetName: target.name, targetFingerprint: target.targetFingerprint };
+      if (selectedCases().length < app.draft.cases.length) body.caseIds = selectedCases().map((item) => item.id);
+      if (canLinkRerun()) body.parentRunId = app.rerunOrigin.runId;
+      const result = await api('/api/run', body);
+      noticeKey('app.runStarted', { id: result.operationId });
+      await refresh(false);
+    });
+  }
   async function stop() {
     if (app.stopping || !app.state?.active) return;
     if (app.state.active.kind === 'plan' && app.planning) app.planRequest += 1;
@@ -688,7 +713,7 @@
     catch (error) { showError(error); }
     finally { app.stopping = false; readiness(); }
   }
-  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = defaultReportFilter(); app.report = result.report; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = defaultReportFilter(); app.report = result.report; app.reportParent = result.parentRun || null; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
   async function prepareFailedCases() { await work(async () => {
     const runId = app.selectedRun;
     const report = app.report;
@@ -709,7 +734,8 @@
     $('target-select').value = sameTarget ? target.name : '';
     await syncScriptForTarget();
     app.rerunTargetMismatch = !sameTarget;
-    app.rerunOrigin = { runId: result.originRunId, count: result.caseIds.length };
+    app.rerunOrigin = { runId: result.originRunId, count: result.caseIds.length, caseIds: result.caseIds,
+      file: result.file, suiteHash: result.suiteHash, targetName: result.targetName, targetFingerprint: result.targetFingerprint };
     renderRerunHints(); targetDescription();
     noticeKey(sameTarget ? 'app.rerunPrepared' : 'app.rerunPreparedTarget', app.rerunOrigin);
     view('scenario');
@@ -875,6 +901,20 @@
     $('report-heading').textContent = `${report.runId} · ${i18n.status(report.status)} · ${targetDisplay(report.target)}`;
     const host = $('report-content'); replace(host);
     const meta = el('div', 'report-meta'); for (const value of [t('app.reportStatus', { status: i18n.status(report.status) }), t('app.reportTarget', { target: targetDisplay(report.target) }), t('app.reportStarted', { date: formatDate(report.startedAt) }), t('app.reportFinished', { date: formatDate(report.finishedAt) })]) meta.append(el('span', '', value)); const scope = selectionScope(report.selection); if (scope) meta.append(el('span', 'selection-scope', scope)); host.append(meta);
+    if (report.parentRunId) {
+      const parent = el('section', 'report-parent'); parent.append(el('p', 'hint', t(app.reportParent ? 'history.parentRun' : 'history.parentMissing', { runId: report.parentRunId })));
+      if (app.reportParent) {
+        const actions = el('div', 'actions');
+        const open = el('button', 'button quiet', t('history.openParent')); open.type = 'button'; open.dataset.action = 'open-parent'; open.addEventListener('click', () => loadReport(report.parentRunId));
+        const compare = el('button', 'button quiet', t('history.compareParent')); compare.type = 'button'; compare.dataset.action = 'compare-parent'; compare.addEventListener('click', () => {
+          selectComparisonRun('baseline', app.reportParent);
+          selectComparisonRun('current', { runId: report.runId, suiteId: report.suiteId, status: report.status, startedAt: report.startedAt, target: report.target, selection: report.selection });
+          void compareRuns();
+        });
+        actions.append(open, compare); parent.append(actions);
+      }
+      host.append(parent);
+    }
     if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
     if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
     const caseList = el('div'); caseList.id = 'report-case-list'; host.append(caseList);

@@ -74,6 +74,8 @@ The CLI supports repeated IDs: `flow-qa run cases/task-flow.json --target demo -
 
 From `0.5.0`, open a detailed report and choose **Prepare failed/error cases** to load its unchanged saved suite with only `failed` and `error` cases selected. Preparation never starts a run: review the cases and target, then run explicitly. Changed or missing case/source files block preparation; a changed or missing target must be selected again. See [preparing failed cases](docs/ui.md#prepare-failed-cases).
 
+When the saved suite, target, and selected cases still match that preparation, the new report records the original run ID. Open or compare the original from the detailed report. If you change those inputs, the new result is saved as an independent run. An unavailable original is identified without hiding the new report.
+
 From `0.8.0`, **Detailed report** supports case/error-text search, status filters, and **Failed/error only**. Use **At least 2 attempts** (0.8.7) to see only cases with multiple recorded attempts. Counts distinguish displayed matches from all recorded cases. Markdown/JSON downloads and failed/error preparation retain the full report scope. To save just the filtered IDs in the displayed order, choose **Download visible case IDs** (0.8.6). See [report case exploration](docs/ui.md#explore-cases-in-a-report).
 
 ## Compare recorded runs

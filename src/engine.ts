@@ -18,6 +18,8 @@ export interface RunSuiteOptions {
   config: Config;
   targetName: string;
   caseIds?: readonly string[];
+  /** The verified run used to prepare this exact case selection. */
+  parentRunId?: string;
   signal?: AbortSignal;
   /** @internal A read-only inventory seam for device-free tests. */
   listMobileDevices?: ListMobileDevices;
@@ -171,6 +173,9 @@ function runnableSuite(suite: Suite, blocked: ReadonlyMap<string, string>): Suit
 export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult> {
   // A malformed selection must not leave a run directory behind.
   const selected = selectCases(options.suite, options.caseIds);
+  if (options.parentRunId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.parentRunId)) {
+    throw new Error('Invalid parent run ID.');
+  }
   let executionSuite = selected.suite;
   let selection = selected.selection;
   const workspace = await realpath(options.workspace);
@@ -193,7 +198,7 @@ export async function runSuite(options: RunSuiteOptions): Promise<RunSuiteResult
   let target: ReportTarget = { name: options.targetName, url: '' };
   let releaseMobileDevice: (() => void) | undefined;
   let stepMap: CompiledStepMap | undefined;
-  const context = () => ({ suite: executionSuite, selection, runId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
+  const context = () => ({ suite: executionSuite, selection, runId, parentRunId: options.parentRunId, suiteHash, target, startedAt, finishedAt: new Date().toISOString(), blockedReasons: blocked });
   const blockAll = (suite: Suite, reason: string): never => {
     for (const testCase of suite.cases) if (!blocked.has(testCase.id)) blocked.set(testCase.id, reason);
     throw new BlockedRun(reason);

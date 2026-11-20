@@ -147,6 +147,7 @@ try {
   await page.locator('#run-btn').click();
   assert.equal((await accepted).status(), 202);
   assert.deepEqual(runRequests[0].caseIds, ['CASE-2', 'CASE-3']);
+  assert.equal(runRequests[0].parentRunId, report.runId);
   const deadline = Date.now() + 90_000;
   let state;
   do { await new Promise(resolve => setTimeout(resolve, 200)); state = await (await fetch(ui.url + '/api/state')).json(); } while (state.active && Date.now() < deadline);
@@ -154,6 +155,7 @@ try {
   assert.ok(state.lastRunId && state.lastRunId !== report.runId, state.lastError);
   const rerun = (await (await fetch(`${ui.url}/api/report?runId=${state.lastRunId}`)).json()).report;
   assert.equal(rerun.status, 'passed', JSON.stringify(rerun.errors));
+  assert.equal(rerun.parentRunId, report.runId);
   assert.deepEqual(rerun.selection, { caseIds: ['CASE-2', 'CASE-3'], totalCases: 6 });
   assert.equal(excludedRequests, 0);
   assert.equal(await readFile(suiteFile, 'utf8'), suiteBytes);
@@ -161,13 +163,24 @@ try {
   await page.waitForFunction(id => document.querySelector('#history-list').textContent.includes(id), rerun.runId);
   await openReport(rerun.runId);
   assert.equal(await page.locator('#report-rerun').isEnabled(), false, 'A passing report has nothing to prepare.');
+  await page.locator('[data-action="compare-parent"]').click();
+  await page.locator('#comparison-results').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#comparison-content').textContent(), /CASE-1/);
+  assert.match(await page.locator('#comparison-content').textContent(), /CASE-2/);
+  await page.locator('[data-action="open-parent"]').click();
+  await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), report.runId);
   await page.locator('#language-select').selectOption('en');
-  await openReport();
+  await openReport(rerun.runId);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-en-mobile.png') });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await rm(path.join(workspace, '.flowqa/runs', report.runId), { recursive: true });
+  await openReport(rerun.runId);
+  assert.match(await page.locator('.report-parent').textContent(), /unavailable/);
+  assert.equal(await page.locator('[data-action="open-parent"]').count(), 0);
   assert.deepEqual(errors, []);
-  const result = { fixtureStatuses: 6, selected: ['failed', 'error'], realBrowserCases: 2, excludedRequests, preparationNeverRuns: true, unsavedCancel: true, changedSuitePreservedDraft: true, changedTargetCleared: true, lateResponseIgnored: true, freshReview: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
+  const result = { fixtureStatuses: 6, selected: ['failed', 'error'], realBrowserCases: 2, excludedRequests, preparationNeverRuns: true, parentRunLinked: true, comparisonFromReport: true, missingParentReadable: true, unsavedCancel: true, changedSuitePreservedDraft: true, changedTargetCleared: true, lateResponseIgnored: true, freshReview: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result, null, 2));
 } finally {

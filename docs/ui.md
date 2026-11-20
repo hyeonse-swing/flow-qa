@@ -108,7 +108,9 @@ The UI finds exactly one saved case file with the report's suite ID, verifies it
 
 Successful preparation opens Scenario with the original source and failed/error selection. The prior target is selected only when its current name and settings still match the recorded target. Otherwise the target is cleared for explicit selection. Review confirmation is always cleared; inspect the selected cases and target before pressing **Run QA**. The normal execution-time file, source, and target checks still apply. Each selected case must establish its own starting state. Mobile target matching compares configured selectors, not physical device identity.
 
-The preparation notice identifies the original run. The next execution creates a separate ordinary report with its selected scope; it does not overwrite the original report or store a persistent parent-run link. Selection stays through navigation, language changes, and polling, but resets on page reload.
+The preparation notice identifies the original run. If the saved suite, target settings, and selected case IDs still match that preparation when you press **Run QA**, the new report records the original run ID. Its detailed report can open the original or compare the two runs directly. The comparison marks cases excluded from the rerun as missing from the current report; it does not count them as passes. A failed, blocked, or interrupted rerun keeps the same original run ID. If the original report is deleted later, the new report remains readable and shows that the original is unavailable.
+
+Changing the suite, target, or case selection starts an independent run without the original link. The UI explains this before execution. The server rechecks the saved inputs and original run at submission time. Selection stays through navigation, language changes, and polling, but resets on page reload. Reports saved by older versions remain readable without an original run ID.
 
 ### Compare two runs
 

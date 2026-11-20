@@ -358,6 +358,50 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (markdown !== undefined) markdown = renderSavedMarkdown(raw, markdown, locale);
     return { report: raw as QAReport, ...(markdown === undefined ? {} : { markdown }) };
   }
+  async function preparedRerun(runId: string) {
+    const { report: previous } = await report(runId, false);
+    const matches = (await suites()).filter((item) => item.id === previous.suiteId);
+    if (matches.length === 0) throw new HTTPError(409, 'No saved case file matches this report.');
+    if (matches.length > 1) throw new HTTPError(409, 'Multiple saved case files match this report.');
+    const file = matches[0]!.file;
+    let selected;
+    try { selected = await getSuite(file, true); }
+    catch (error) {
+      if (error instanceof HTTPError && error.status === 404) {
+        throw new HTTPError(409, 'The saved case file or source flow was not found.');
+      }
+      if (error instanceof HTTPError && error.status === 400) {
+        throw new HTTPError(409, 'The saved case file or source flow is invalid.');
+      }
+      throw error;
+    }
+    const { suite } = selected;
+    if (sha256(`${JSON.stringify(suite, null, 2)}\n`) !== previous.suiteHash) {
+      throw new HTTPError(409, 'The saved case file changed since this run. Review it before rerunning.');
+    }
+    const available = new Set(suite.cases.map((item) => item.id));
+    if (previous.cases.some((item) => !item.id.trim() || !available.has(item.id)) ||
+      new Set(previous.cases.map((item) => item.id)).size !== previous.cases.length ||
+      (!previous.selection && previous.cases.length !== suite.cases.length)) {
+      throw new HTTPError(409, 'The report cases do not match the saved case file.');
+    }
+    if (previous.selection && (previous.selection.totalCases !== suite.cases.length ||
+      !isReportSelectionValid(previous.cases, previous.selection))) {
+      throw new HTTPError(409, 'The report selection does not match the saved case file.');
+    }
+    const failing = new Set(previous.cases.filter((item) => item.status === 'failed' || item.status === 'error').map((item) => item.id));
+    const caseIds = suite.cases.filter((item) => failing.has(item.id)).map((item) => item.id);
+    if (caseIds.length === 0) throw new HTTPError(409, 'No failed or errored cases are available to rerun.');
+    const settings = await config();
+    const targetName = previous.target.name;
+    const expectedFingerprint = targetFingerprint(previous.target);
+    const currentTarget = Object.hasOwn(settings.targets, targetName) ? settings.targets[targetName] : undefined;
+    return { originRunId: runId, file, ...selected, caseIds, targetName,
+      targetFingerprint: expectedFingerprint,
+      targetMatches: Boolean(currentTarget &&
+        (suite.platform ?? 'web') === (currentTarget.kind === 'mobile' ? 'mobile' : 'web') &&
+        targetFingerprint(currentTarget) === expectedFingerprint) };
+  }
   async function runCandidates(): Promise<RunCandidate[]> {
     const root = await directory(['.flowqa', 'runs']);
     if (!root) return [];
@@ -472,54 +516,20 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
       if (url.pathname === '/api/report') {
         const runId = url.searchParams.get('runId');
         if (!runId) invalid('A run ID is required.');
-        sendJSON(response, 200, await report(runId, true, locale)); return;
+        const saved = await report(runId, true, locale);
+        let parentRun: RunSummary | null = null;
+        if (saved.report.parentRunId) {
+          try { parentRun = runSummary((await report(saved.report.parentRunId, false)).report); }
+          catch (error) {
+            if (!(error instanceof HTTPError && (error.status === 404 || error.status === 400))) throw error;
+          }
+        }
+        sendJSON(response, 200, { ...saved, ...(saved.report.parentRunId ? { parentRun } : {}) }); return;
       }
       if (url.pathname === '/api/rerun') {
         const runId = url.searchParams.get('runId');
         if (!runId) invalid('A run ID is required.');
-        const { report: previous } = await report(runId, false);
-        const matches = (await suites()).filter((item) => item.id === previous.suiteId);
-        if (matches.length === 0) throw new HTTPError(409, 'No saved case file matches this report.');
-        if (matches.length > 1) throw new HTTPError(409, 'Multiple saved case files match this report.');
-        const file = matches[0]!.file;
-        let selected;
-        try { selected = await getSuite(file, true); }
-        catch (error) {
-          if (error instanceof HTTPError && error.status === 404) {
-            throw new HTTPError(409, 'The saved case file or source flow was not found.');
-          }
-          if (error instanceof HTTPError && error.status === 400) {
-            throw new HTTPError(409, 'The saved case file or source flow is invalid.');
-          }
-          throw error;
-        }
-        const { suite } = selected;
-        if (sha256(`${JSON.stringify(suite, null, 2)}\n`) !== previous.suiteHash) {
-          throw new HTTPError(409, 'The saved case file changed since this run. Review it before rerunning.');
-        }
-        const available = new Set(suite.cases.map((item) => item.id));
-        if (previous.cases.some((item) => !item.id.trim() || !available.has(item.id)) ||
-          new Set(previous.cases.map((item) => item.id)).size !== previous.cases.length ||
-          (!previous.selection && previous.cases.length !== suite.cases.length)) {
-          throw new HTTPError(409, 'The report cases do not match the saved case file.');
-        }
-        if (previous.selection && (previous.selection.totalCases !== suite.cases.length ||
-          !isReportSelectionValid(previous.cases, previous.selection))) {
-          throw new HTTPError(409, 'The report selection does not match the saved case file.');
-        }
-        const failing = new Set(previous.cases.filter((item) => item.status === 'failed' || item.status === 'error').map((item) => item.id));
-        const caseIds = suite.cases.filter((item) => failing.has(item.id)).map((item) => item.id);
-        if (caseIds.length === 0) throw new HTTPError(409, 'No failed or errored cases are available to rerun.');
-        const settings = await config();
-        const targetName = previous.target.name;
-        const expectedFingerprint = targetFingerprint(previous.target);
-        const currentTarget = Object.hasOwn(settings.targets, targetName) ? settings.targets[targetName] : undefined;
-        sendJSON(response, 200, { originRunId: runId, file, ...selected, caseIds, targetName,
-          targetFingerprint: expectedFingerprint,
-          targetMatches: Boolean(currentTarget &&
-            (suite.platform ?? 'web') === (currentTarget.kind === 'mobile' ? 'mobile' : 'web') &&
-            targetFingerprint(currentTarget) === expectedFingerprint) });
-        return;
+        sendJSON(response, 200, await preparedRerun(runId)); return;
       }
       if (url.pathname === '/api/comparison') {
         const baseline = url.searchParams.get('baseline');
@@ -713,10 +723,11 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (url.pathname === '/api/run') {
       enterMutation();
       try {
-        const { suite: file, suiteHash, targetName, targetURL, targetFingerprint: reviewedFingerprint, caseIds } = parse(z.object({
+        const { suite: file, suiteHash, targetName, targetURL, targetFingerprint: reviewedFingerprint, caseIds, parentRunId } = parse(z.object({
           suite: z.string(), suiteHash: z.string().regex(/^[a-f0-9]{64}$/), targetName: idSchema,
           targetURL: z.string().optional(), targetFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
           caseIds: z.array(idSchema).min(1).max(100).optional(),
+          parentRunId: z.string().regex(RUN_ID).optional(),
         }).strict(), body);
         const selected = await getSuite(file, true);
         if (selected.suiteHash !== suiteHash) throw new HTTPError(409, 'The reviewed case file changed. Open it again to review.');
@@ -738,6 +749,17 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         } else if (target.kind === 'mobile' || !targetURL || target.url !== targetURL) {
           throw new HTTPError(409, 'The selected target changed. Review it again.');
         }
+        if (parentRunId) {
+          const prepared = await preparedRerun(parentRunId);
+          const actualIds = selectedIds ?? suite.cases.map((item) => item.id);
+          if (prepared.file !== file || prepared.suiteHash !== suiteHash ||
+            prepared.targetName !== targetName || !prepared.targetMatches ||
+            prepared.targetFingerprint !== targetFingerprint(target) ||
+            actualIds.length !== prepared.caseIds.length ||
+            actualIds.some((id, index) => id !== prepared.caseIds[index])) {
+            throw new HTTPError(409, 'The prepared rerun changed. Review it again or start an independent run.');
+          }
+        }
         const operationId = randomUUID();
         const abort = new AbortController();
         controller = abort;
@@ -747,7 +769,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         const suiteSnapshot = structuredClone(suite);
         const configSnapshot = structuredClone(settings);
         runTask = Promise.resolve().then(() => run({ workspace, suite: suiteSnapshot, config: configSnapshot, targetName, signal: abort.signal,
-          ...(selectedIds ? { caseIds: [...selectedIds] } : {}) }))
+          ...(selectedIds ? { caseIds: [...selectedIds] } : {}), ...(parentRunId ? { parentRunId } : {}) }))
           .then(() => undefined)
           .catch(() => { lastError = 'Could not complete the run. Check the local records.'; })
           .finally(() => { active = null; controller = undefined; busy = false; runTask = undefined; });

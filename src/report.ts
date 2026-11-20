@@ -56,6 +56,7 @@ export interface QACase {
 export interface QAReport {
   schemaVersion: 'flow-qa/report-1';
   runId: string;
+  parentRunId?: string;
   suiteId: string;
   suiteHash: string;
   target: ReportTarget;
@@ -71,6 +72,7 @@ export interface QAReport {
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const archiveEnvelopeSchema = z.object({
   schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
+  parentRunId: z.string().regex(RUN_ID).optional(),
   suiteHash: z.string(), target: z.union([
     z.object({ name: z.string(), url: z.string() }),
     z.object({ name: z.string(), kind: z.literal('mobile'), platform: z.enum(['ios', 'android']), bundleId: z.string(), device: z.string() }),
@@ -86,7 +88,7 @@ const archiveEnvelopeSchema = z.object({
 /** The original UI metadata contract accepts older reports with incomplete attempt details. */
 export function parseArchivedReportEnvelope(raw: unknown): QAReport | undefined {
   const parsed = archiveEnvelopeSchema.safeParse(raw);
-  return parsed.success && isReportSelectionValid(parsed.data.cases, parsed.data.selection) ? parsed.data as QAReport : undefined;
+  return parsed.success && parsed.data.parentRunId !== parsed.data.runId && isReportSelectionValid(parsed.data.cases, parsed.data.selection) ? parsed.data as QAReport : undefined;
 }
 
 const savedErrorSchema = z.object({ code: z.string(), message: z.string(), category: z.enum(['test', 'configuration', 'infrastructure', 'internal', 'interrupted']).optional() });
@@ -113,6 +115,7 @@ const savedReportSchema = z.object({
 export function isSavedReport(raw: unknown): raw is QAReport {
   if (!savedReportSchema.safeParse(raw).success) return false;
   const report = raw as QAReport;
+  if (report.parentRunId === report.runId) return false;
   if (!isReportSelectionValid(report.cases, report.selection)) return false;
   for (const item of report.cases) {
     if (item.definedSteps && (item.definedSteps.length === 0 || item.definedSteps.length > 100)) return false;
@@ -141,6 +144,7 @@ export function renderSavedMarkdown(raw: unknown, savedMarkdown: string, locale:
 export interface ReportContext {
   suite: Suite;
   runId: string;
+  parentRunId?: string;
   suiteHash: string;
   target: ReportTarget;
   startedAt: string;
@@ -386,7 +390,7 @@ export function normalizeReport1(raw: unknown, context: ReportContext): QAReport
     : rawStatus === 'failed' ? 'failed'
     : 'passed';
   return {
-    schemaVersion: 'flow-qa/report-1', runId: context.runId, suiteId: context.suite.id,
+    schemaVersion: 'flow-qa/report-1', runId: context.runId, ...(context.parentRunId ? { parentRunId: context.parentRunId } : {}), suiteId: context.suite.id,
     suiteHash: context.suiteHash, target: context.target, startedAt: context.startedAt,
     finishedAt: context.finishedAt, status, cases, errors, usage: reportUsage, ...reportSelection(context),
   };
@@ -403,7 +407,7 @@ export function stoppedReport(raw: unknown, context: ReportContext, status: 'int
 /** An explicit failure report still enumerates every expected case. */
 export function failureReport(context: Omit<ReportContext, 'rawDir' | 'testFile'>, status: QAStatus, error: string): QAReport {
   return {
-    schemaVersion: 'flow-qa/report-1', runId: context.runId, suiteId: context.suite.id,
+    schemaVersion: 'flow-qa/report-1', runId: context.runId, ...(context.parentRunId ? { parentRunId: context.parentRunId } : {}), suiteId: context.suite.id,
     suiteHash: context.suiteHash, target: context.target, startedAt: context.startedAt,
     finishedAt: context.finishedAt, status,
     cases: scopedCases(context).map((testCase) => ({
@@ -442,6 +446,7 @@ export function renderMarkdown(report: QAReport, locale: Locale = 'en'): string 
     `# ${label('QA results', 'QA 결과')}: ${safe(report.suiteId)}`,
     '',
     `- ${label('Run ID', '실행 ID')}: ${safe(report.runId)}`,
+    ...(report.parentRunId ? [`- ${label('Prepared from run', '재실행 원본')}: ${safe(report.parentRunId)}`] : []),
     `- ${label('Target', '대상')}: ${safe(report.target.name)} ${report.target.kind === 'mobile'
       ? safe(targetLabel(report.target))
       : label('(URL available in the local JSON report)', '(주소는 로컬 JSON 보고서에서 확인)')}`,

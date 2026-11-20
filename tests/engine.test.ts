@@ -77,6 +77,18 @@ test('direct runSuite rejects a stale source before launching e2e and still writ
   assert.ok(readFileSync(path.join(result.runDir, 'qa-report.json'), 'utf8').includes('STALE_SUITE'));
 });
 
+test('rerun ancestry is written even when the selected execution ends in an error', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'flow-qa-engine-'));
+  const parentRunId = '0192f3a0-0000-7000-8000-000000000002';
+  const abort = new AbortController(); abort.abort();
+  const result = await runSuite({ workspace, suite: suite('question'), config, targetName: 'local',
+    parentRunId, signal: abort.signal });
+  assert.equal(result.report.parentRunId, parentRunId);
+  assert.equal(result.report.status, 'interrupted');
+  assert.equal(JSON.parse(readFileSync(path.join(result.runDir, 'qa-report.json'), 'utf8')).parentRunId, parentRunId);
+  assert.match(readFileSync(path.join(result.runDir, 'qa-report.md'), 'utf8'), /Prepared from run/);
+});
+
 function nativeSuite(): Suite {
   return { ...suite('native'), platform: 'mobile', cases: [{ id: 'C1', title: 'native', requirementIds: ['R1'],
     preconditions: [], questions: [], steps: [{ type: 'assertVisible', locator: { by: 'text', value: 'Ready' }, visible: true }] }] };

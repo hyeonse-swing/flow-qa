@@ -973,6 +973,74 @@ test('rerun preparation rejects stale or ambiguous saved cases, invalid source, 
   } finally { await app.close(); }
 });
 
+test('run submission records only a verified rerun origin and keeps child reports readable without it', async () => {
+  const calls: { parentRunId?: string; caseIds?: readonly string[] }[] = [];
+  const app = await fixture({ workspace: '', run: async (options) => {
+    calls.push({ parentRunId: options.parentRunId, caseIds: options.caseIds });
+    return { runDir: '', report: {} as QAReport };
+  } });
+  try {
+    const suite = await readSuite(path.join(app.workspace, 'cases/task-flow.json'));
+    const [passedId, failedId] = suite.cases.map((item) => item.id);
+    assert.ok(passedId && failedId);
+    const parentRunId = randomUUID();
+    const parentDir = path.join(app.workspace, '.flowqa/runs', parentRunId);
+    await mkdir(parentDir, { recursive: true });
+    const config = await readConfig(app.workspace);
+    const target = config.targets.demo!;
+    assert.ok('url' in target);
+    const original = failureReport({ suite, runId: parentRunId,
+      suiteHash: sha256(`${JSON.stringify(suite, null, 2)}\n`),
+      target: { name: 'demo', url: target.url }, startedAt: '2026-11-03T00:00:00Z',
+      finishedAt: '2026-11-03T00:00:01Z', blockedReasons: new Map() }, 'failed', 'Test failed');
+    for (const item of original.cases) item.status = 'passed';
+    original.cases[1]!.status = 'failed';
+    await writeFile(path.join(parentDir, 'qa-report.json'), JSON.stringify(original));
+    await writeFile(path.join(parentDir, 'qa-report.md'), '# Original\n');
+    const prepared = await (await fetch(`${app.server.url}/api/rerun?runId=${parentRunId}`)).json() as {
+      file: string; suiteHash: string; targetName: string; targetFingerprint: string; caseIds: string[];
+    };
+    assert.deepEqual(prepared.caseIds, [failedId]);
+    const body = { suite: prepared.file, suiteHash: prepared.suiteHash, targetName: prepared.targetName,
+      targetFingerprint: prepared.targetFingerprint, caseIds: prepared.caseIds, parentRunId };
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds: [passedId] })).status, 409);
+    assert.equal((await post(app.server, app.token, '/api/run', body)).status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, [{ parentRunId, caseIds: [failedId] }]);
+    assert.equal((await post(app.server, app.token, '/api/run', { ...body, caseIds: [passedId], parentRunId: undefined })).status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls[1], { parentRunId: undefined, caseIds: [passedId] });
+
+    const childRunId = randomUUID();
+    const childDir = path.join(app.workspace, '.flowqa/runs', childRunId);
+    const selected = selectCases(suite, [failedId]);
+    const child = failureReport({ suite: selected.suite, selection: selected.selection, runId: childRunId,
+      parentRunId, suiteHash: original.suiteHash, target: original.target,
+      startedAt: '2026-11-03T00:00:02Z', finishedAt: '2026-11-03T00:00:03Z', blockedReasons: new Map() }, 'passed', '');
+    child.cases[0]!.status = 'passed'; child.errors = [];
+    child.cases[0]!.attempts = [{ index: 0, status: 'passed', startedAt: child.startedAt,
+      durationMs: 1, secondaryErrors: [], steps: [], artifacts: [] }];
+    await mkdir(childDir);
+    await writeFile(path.join(childDir, 'qa-report.json'), JSON.stringify(child));
+    await writeFile(path.join(childDir, 'qa-report.md'), '# Child\n');
+    const childResponse = await (await fetch(`${app.server.url}/api/report?runId=${childRunId}`)).json() as {
+      report: QAReport; parentRun: { runId: string } | null; markdown: string;
+    };
+    assert.equal(childResponse.report.parentRunId, parentRunId);
+    assert.equal(childResponse.parentRun?.runId, parentRunId);
+    assert.match(childResponse.markdown, /Prepared from run/);
+    const comparison = await (await fetch(`${app.server.url}/api/comparison?baseline=${parentRunId}&current=${childRunId}`)).json() as {
+      comparison: { counts: { missing: number; 'now-passed': number } };
+    };
+    assert.equal(comparison.comparison.counts.missing, suite.cases.length - 1);
+    assert.equal(comparison.comparison.counts['now-passed'], 1);
+    await rm(parentDir, { recursive: true });
+    const orphan = await (await fetch(`${app.server.url}/api/report?runId=${childRunId}`)).json() as typeof childResponse;
+    assert.equal(orphan.report.parentRunId, parentRunId);
+    assert.equal(orphan.parentRun, null);
+  } finally { await app.close(); }
+});
+
 test('comparison API reads report JSON without Markdown and enforces locale, compatibility, and origin checks', async () => {
   const app = await fixture();
   try {
