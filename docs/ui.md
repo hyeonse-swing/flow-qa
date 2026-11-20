@@ -138,7 +138,7 @@ The JSON keeps the case content and source reference. The Markdown retains its e
 
 ## Display and language
 
-The UI uses role tokens and preference utilities from `@hyeonse/design-system` 0.4.8. The source checkout installs its [public release archive](https://design-system.hyeonse.dev/releases/hyeonse-design-system-0.4.8.tgz); the published Flow QA package contains only the CSS and preference files needed by the local UI, with the design system's MIT license. Flow QA implements its own workflow layout, buttons, and fields with those tokens.
+The UI uses role tokens and preference utilities from `@hyeonse/design-system` 0.5.0. The source checkout installs its [public release archive](https://design-system.hyeonse.dev/releases/hyeonse-design-system-0.5.0.tgz); the published Flow QA package contains only the CSS and preference files needed by the local UI, with the design system's MIT license. Flow QA implements its own workflow layout, buttons, and fields with those tokens.
 
 The top-bar theme button and **Connections → Display settings** control theme, accent, density, corners, and motion. Preferences are saved under `flowqa-display-preferences` in the browser and shared across tabs. The device's reduced-motion setting takes priority. The saved preferences are applied before the token CSS appears on first load. If browser storage cannot be read or written, Display settings shows a localized warning: changes still apply in the current tab but may reset on reload. A successful later change or reset saves the preferences and clears the warning. Only local-storage events synchronize these settings between tabs.
 

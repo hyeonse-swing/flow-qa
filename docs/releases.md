@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.10.1 — Hyeonse Design System 0.5.0
+
+The local UI packages the CSS, preference module, and MIT license from the public Hyeonse Design System 0.5.0 archive. The installed Flow QA package serves byte-identical copies of these files.
+
 ## 0.10.0 — First differing authored step
 
 Run comparisons now identify the last common passed step and first differing observed step when both reports share one suite definition and the engine's source positions uniquely identify authored commands. The generated setup call is counted separately. The selected attempt is the last recorded attempt on each side, and a terminal failure marks subsequent authored steps as not run. The local UI and complete JSON/Markdown downloads carry the same judgment. Old reports, changed definitions, missing attempts, and uncertain links retain the existing case status comparison with a reason for unavailable step detail.
