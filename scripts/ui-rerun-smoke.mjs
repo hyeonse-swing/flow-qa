@@ -58,8 +58,17 @@ try {
   const selected = () => page.locator('#case-selection-list input:checked').evaluateAll(inputs => inputs.map(input => input.dataset.caseId));
   const openReport = async (runId = report.runId) => {
     await page.locator('[data-view="history"]').click();
+    const responsePromise = page.waitForResponse(value => {
+      const url = new URL(value.url());
+      return url.pathname === '/api/report' && url.searchParams.get('runId') === runId;
+    });
     await page.locator('#history-list .list-row').filter({ hasText: runId }).locator('[data-action="view-report"]').click();
+    const response = await responsePromise;
+    assert.equal(response.status(), 200);
+    const result = await response.json();
+    assert.equal(result.report.runId, runId);
     await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), runId);
+    return result;
   };
   const prepare = async () => {
     const response = page.waitForResponse(value => value.url().includes('/api/rerun?'));
@@ -176,7 +185,9 @@ try {
   await page.locator('#report-panel').screenshot({ path: path.join(artifacts, 'report-en-mobile.png') });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await rm(path.join(workspace, '.flowqa/runs', report.runId), { recursive: true });
-  await openReport(rerun.runId);
+  const missingParent = await openReport(rerun.runId);
+  assert.equal(missingParent.parentRun, null);
+  await page.locator('.report-parent').getByText(/unavailable/).waitFor();
   assert.match(await page.locator('.report-parent').textContent(), /unavailable/);
   assert.equal(await page.locator('[data-action="open-parent"]').count(), 0);
   assert.deepEqual(errors, []);
