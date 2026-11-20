@@ -463,14 +463,16 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     if (url.origin !== origin) throw new HTTPError(403, 'Invalid request origin.');
     if (request.method === 'GET') {
       if (url.pathname === '/api/state') {
+        const observedActive = active;
         const settings = await config();
         const history = (await runSummaries(RUN_HISTORY_LIMIT)).map(({ summary }) => summary);
+        const stateActive = observedActive ?? active;
         sendJSON(response, 200, { csrfToken: token,
           targets: Object.entries(settings.targets).map(([name, target]) => ({ name, ...target, targetFingerprint: targetFingerprint(target) })),
           models: { planner: modelState(settings.planner), agent: modelState(settings.agent) },
           runtime: { browserInstalled: await browserInstalled(), browserInstallCommand: BROWSER_INSTALL_COMMAND },
           suites: await suites(), runs: history,
-          active: active?.kind === 'plan' ? { ...active, title: localizeProductMessage(active.title, locale) } : active,
+          active: stateActive?.kind === 'plan' ? { ...stateActive, title: localizeProductMessage(stateActive.title, locale) } : stateActive,
           ...(history[0] ? { lastRunId: history[0].runId } : {}),
           ...(lastError ? { lastError: localizeProductMessage(lastError, locale) } : {}) });
         return;

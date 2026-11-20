@@ -159,7 +159,8 @@ registerHooks({ resolve(specifier, context, nextResolve) {
     finalState = await (await get('/api/state')).json();
   } while (finalState.active && Date.now() < comparisonDeadline);
   assert.equal(finalState.active, null, 'Second installed demo timed out.');
-  assert.ok(finalState.lastRunId && finalState.lastRunId !== report.runId, finalState.lastError);
+  assert.ok(finalState.lastRunId && finalState.lastRunId !== report.runId,
+    JSON.stringify({ previousRunId: report.runId, lastRunId: finalState.lastRunId, lastError: finalState.lastError }));
   const comparisonRoute = '/api/comparison?' + new URLSearchParams({ baseline: report.runId, current: finalState.lastRunId });
   const compared = await (await get(comparisonRoute)).json();
   assert.equal(compared.comparison.schemaVersion, 'flow-qa/comparison-1');
