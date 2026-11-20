@@ -319,6 +319,42 @@ test('CLI compares archived reports whose bare roots differ only by one slash', 
     assert.match((await qa('compare', 'before', 'other')).stdout, /Suite, target or case selection differs/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+test('CLI compare shows authored step evidence when both saved runs contain verified links', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flow-qa-step-cli-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir], { env: { ...process.env, FLOW_QA_LANG: '' } });
+  const definedSteps = [{ type: 'assertText' }, { type: 'assertText' }, { type: 'assertVisible' }];
+  const report = {
+    suiteHash: 'a'.repeat(64), suiteId: 'suite',
+    target: { name: 'site', url: 'http://127.0.0.1:43982' },
+  };
+  try {
+    for (const [name, status, states] of [
+      ['before', 'passed', ['passed', 'passed', 'passed']],
+      ['after', 'failed', ['passed', 'failed']],
+    ] as const) {
+      await mkdir(join(dir, name));
+      await writeFile(join(dir, name, 'qa-report.json'), JSON.stringify({
+        ...report,
+        cases: [{ id: 'C1', status, definedSteps, attempts: [{
+          index: 0, status, steps: states.map((stepStatus, sourceStepIndex) => ({
+            api: 'assert', label: 'same assertion', status: stepStatus, sourceStepIndex,
+          })),
+        }] }],
+      }));
+    }
+    const english = (await qa('compare', 'before', 'after')).stdout;
+    assert.match(english, /C1: passed → failed/);
+    assert.match(english, /Last common passed step: 1; first differing step: 2/);
+    const korean = (await qa('compare', 'before', 'after', '--lang', 'ko')).stdout;
+    assert.match(korean, /마지막 공통 성공 단계: 1, 첫 결과 차이 단계: 2/);
+    const old = JSON.parse(await readFile(join(dir, 'before', 'qa-report.json'), 'utf8'));
+    delete old.cases[0].definedSteps;
+    await writeFile(join(dir, 'before', 'qa-report.json'), JSON.stringify(old));
+    const legacy = (await qa('compare', 'before', 'after')).stdout;
+    assert.match(legacy, /C1: passed → failed/);
+    assert.doesNotMatch(legacy, /first differing step/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test('CLI compare rejects an unknown archived case status instead of reporting a transition', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-invalid-compare-'));
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);

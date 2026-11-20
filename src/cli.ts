@@ -13,6 +13,7 @@ import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-
 import { runSuite } from './engine.ts';
 import { renderSavedMarkdown, type QAReport } from './report.ts';
 import { registrationTarget, sameReportTarget, targetLabel, type ReportTarget } from './targets.ts';
+import { compareCaseSteps } from './step-comparison.ts';
 import { createAgentHandoff, reviewAgentHandoff } from './agent-handoff.ts';
 
 const help: Record<Locale, string> = {
@@ -38,7 +39,7 @@ Usage: flow-qa <command> [arguments] [options]
   agent-review <handoff-dir> <result.json>
                                       Check agent-supplied findings and evidence references
   report <run-directory>              View a saved QA report
-  compare <run-a> <run-b>              Compare case results
+  compare <run-a> <run-b>              Compare case results and authored steps
   ui [--demo] [--port 4310]           Start the local QA UI
   browser install [--with-deps]       Install this package's Playwright Chromium
   doctor                              Check the local engine and connections
@@ -69,7 +70,7 @@ Local example: flow-qa ui --demo
   agent-review <handoff-dir> <result.json>
                                       에이전트 관찰 결과와 증거 파일 참조 검사
   report <run-directory>              저장된 QA 리포트 보기
-  compare <run-a> <run-b>             케이스별 결과 비교
+  compare <run-a> <run-b>             케이스 결과와 원본 단계 비교
   ui [--demo] [--port 4310]           로컬 QA 화면 실행
   browser install [--with-deps]       패키지의 Playwright Chromium 설치
   doctor                             로컬 엔진과 연결 설정 확인
@@ -306,9 +307,19 @@ export async function main(args: string[]): Promise<void> {
       const comparable = before.suiteId === after.suiteId && before.suiteHash === after.suiteHash && sameReportTarget(before.target, after.target) && sameSelection;
       console.log(comparable ? localized(locale, 'Comparing the same suite, target and case selection (check external data state separately)', '동일 명세·대상·케이스 범위 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite, target or case selection differs; no direct regression verdict is made.', '명세·대상 또는 케이스 범위가 달라 직접적인 회귀 판정은 하지 않습니다.'));
       if (before.selection || after.selection) console.log(localized(locale, 'This comparison includes selected cases only; omitted cases were not evaluated.', '이 비교에는 선택 실행이 포함되어 있습니다. 미선택 케이스는 검증되지 않았습니다.'));
-      const previous = new Map(before.cases.map((c) => [c.id, c.status]));
-      const current = new Map(after.cases.map((c) => [c.id, c.status]));
-      for (const id of new Set([...previous.keys(), ...current.keys()])) console.log(`${safeText(id)}: ${safeText(previous.get(id) ?? localized(locale, 'not included', '미포함'))} → ${safeText(current.get(id) ?? localized(locale, 'not included', '미포함'))}`);
+      const previous = new Map(before.cases.map((item) => [item.id, item]));
+      const current = new Map(after.cases.map((item) => [item.id, item]));
+      for (const id of new Set([...previous.keys(), ...current.keys()])) {
+        const baselineCase = previous.get(id);
+        const currentCase = current.get(id);
+        console.log(`${safeText(id)}: ${safeText(baselineCase?.status ?? localized(locale, 'not included', '미포함'))} → ${safeText(currentCase?.status ?? localized(locale, 'not included', '미포함'))}`);
+        if (!comparable || !baselineCase || !currentCase) continue;
+        const steps = compareCaseSteps(baselineCase, currentCase, true);
+        if (steps.availability !== 'compared') continue;
+        const common = steps.lastCommonPassedStepIndex === undefined ? localized(locale, 'none', '없음') : String(steps.lastCommonPassedStepIndex + 1);
+        const difference = steps.firstDifferenceStepIndex === undefined ? localized(locale, 'none', '없음') : String(steps.firstDifferenceStepIndex + 1);
+        console.log(localized(locale, `  Last common passed step: ${common}; first differing step: ${difference}`, `  마지막 공통 성공 단계: ${common}, 첫 결과 차이 단계: ${difference}`));
+      }
       return;
     }
     if (command === 'doctor') {
