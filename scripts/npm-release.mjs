@@ -54,12 +54,13 @@ export function registryConfirmed(version, published, latest, requireLatest) {
 
 export function registryConfirmedForCommit(version, metadata, latest, requireLatest, githubSha) {
   if (!validCommitSha(githubSha)) throw new Error('GITHUB_SHA must be a valid nonzero commit SHA');
-  if (!registryConfirmed(version, metadata?.version, latest, requireLatest)) return false;
-  if (!validCommitSha(metadata.gitHead)) throw new Error('npm registry metadata is missing a valid gitHead');
-  if (metadata.gitHead.toLowerCase() !== githubSha.toLowerCase()) {
-    throw new Error('npm registry gitHead does not match GITHUB_SHA');
+  if (metadata) {
+    if (!validCommitSha(metadata.gitHead)) throw new Error('npm registry metadata is missing a valid gitHead');
+    if (metadata.gitHead.toLowerCase() !== githubSha.toLowerCase()) {
+      throw new Error('npm registry gitHead does not match GITHUB_SHA');
+    }
   }
-  return true;
+  return registryConfirmed(version, metadata?.version, latest, requireLatest);
 }
 
 export async function registryMetadata(suffix, allow404 = false, request = fetch) {
@@ -79,6 +80,42 @@ export async function registryMetadata(suffix, allow404 = false, request = fetch
 export async function registryVersion(suffix, allow404 = false, request = fetch) {
   const metadata = await registryMetadata(suffix, allow404, request);
   return metadata?.version ?? null;
+}
+
+export function isRetryableRegistryError(error) {
+  if (/^npm registry (?:latest|\d+\.\d+\.\d+): HTTP (?:429|5\d\d)$/.test(error?.message ?? '')) return true;
+  const transientCodes = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN',
+    'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET']);
+  const seen = new Set();
+  for (let current = error; current && !seen.has(current); current = current.cause) {
+    seen.add(current);
+    if (current.name === 'TimeoutError' || transientCodes.has(current.code)) return true;
+  }
+  return false;
+}
+
+export async function verifyPublishedRelease(version, githubSha, requireLatest, request = fetch,
+  pause = ms => new Promise(done => setTimeout(done, ms)), now = () => performance.now()) {
+  const deadline = now() + 10 * 60_000;
+  for (;;) {
+    try {
+      const published = await registryMetadata(version, true, request);
+      if (published) registryConfirmedForCommit(version, published, null, false, githubSha);
+      const latest = requireLatest ? await registryVersion('latest', true, request) : null;
+      if (registryConfirmedForCommit(version, published, latest, requireLatest, githubSha)) return;
+      if (requireLatest && latest !== null && greater(latest, version)) {
+        throw new Error(`npm latest ${latest} already exceeds ${version}`);
+      }
+    } catch (error) {
+      if (!isRetryableRegistryError(error)) throw error;
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      throw new Error(`npm registry did not confirm ${NAME}@${version}${requireLatest ? ' as latest' : ''} within 10 minutes`);
+    }
+    console.log(`${NAME}@${version}: exact version or latest is still propagating; retrying`);
+    await pause(Math.min(20_000, remaining));
+  }
 }
 
 async function main() {
@@ -117,26 +154,8 @@ async function main() {
   }
   const githubSha = process.env.GITHUB_SHA;
   if (!validCommitSha(githubSha)) throw new Error('GITHUB_SHA must be a valid nonzero commit SHA');
-  for (let attempt = 1; attempt <= 15; attempt++) {
-    let published;
-    let latest;
-    try {
-      [published, latest] = await Promise.all([
-        registryMetadata(version),
-        requireLatest ? registryVersion('latest') : Promise.resolve(null),
-      ]);
-    } catch (error) {
-      if (attempt === 15) throw error;
-      await new Promise(done => setTimeout(done, 20_000));
-      continue;
-    }
-    if (registryConfirmedForCommit(version, published, latest, requireLatest, githubSha)) {
-      console.log(`npm registry confirms ${NAME}@${version}${requireLatest ? ' and latest' : ''} at GITHUB_SHA`);
-      return;
-    }
-    if (attempt < 15) await new Promise(done => setTimeout(done, 20_000));
-  }
-  throw new Error(`npm registry did not confirm ${NAME}@${version} as latest`);
+  await verifyPublishedRelease(version, githubSha, requireLatest);
+  console.log(`npm registry confirms ${NAME}@${version}${requireLatest ? ' and latest' : ''} at GITHUB_SHA`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
