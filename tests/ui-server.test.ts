@@ -617,6 +617,8 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     const statuses: QAReport['status'][] = ['passed', 'failed', 'blocked', 'error', 'interrupted'];
     const records: { id: string; mtime: number; status: QAReport['status'] }[] = [];
     const idsByIndex: string[] = [];
+    const relatedParent = randomUUID();
+    const otherParent = randomUUID();
     const saveRun = async (id: string, index: number, status: QAReport['status'], suiteId = suite.id, targetName = 'demo') => {
       const runDir = path.join(root, id);
       await mkdir(runDir);
@@ -625,6 +627,8 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
         startedAt: '2026-10-01T00:00:00.000Z', finishedAt: '2026-10-01T00:01:00.000Z',
         blockedReasons: new Map() }, status, 'Search-only error');
       report.suiteId = suiteId;
+      if ([1, 19, 62].includes(index)) report.parentRunId = relatedParent;
+      if (index === 3) report.parentRunId = otherParent;
       report.cases[0]!.title = 'Search-only title';
       if (index === 0) { report.cases[0]!.status = 'flaky'; report.cases[1]!.status = 'passed'; }
       await writeFile(path.join(runDir, 'qa-report.json'), JSON.stringify(report));
@@ -669,7 +673,7 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
       const response = await fetch(`${app.server.url}/api/runs${search}`);
       assert.equal(response.status, 200, search);
       assert.equal(response.headers.get('cache-control'), 'no-store');
-      return await response.json() as { runs: { runId: string; suiteId: string; status: QAReport['status'];
+      return await response.json() as { runs: { runId: string; suiteId: string; status: QAReport['status']; parentRunId?: string;
         caseCount: number; passedCount: number; target: QAReport['target'] }[]; nextCursor: string | null };
     };
 
@@ -681,6 +685,9 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     assert.equal(current.lastRunId, expectedIds[0]);
     assert.equal(defaultPage.runs.find((run) => run.runId === idsByIndex[0])?.passedCount, 2);
     assert.ok(defaultPage.nextCursor);
+    const legacyCursor = JSON.parse(Buffer.from(defaultPage.nextCursor, 'base64url').toString('utf8')) as { filterHash: string };
+    assert.equal(legacyCursor.filterHash, sha256(JSON.stringify(['', ''])),
+      'Unrelated run-history cursors retain their previous filter hash.');
 
     const firstPage = await getPage('?limit=17');
     assert.deepEqual(firstPage.runs.map((run) => run.runId), expectedIds.slice(0, 17));
@@ -703,6 +710,17 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
     assert.deepEqual(korean.runs.map((run) => run.runId), [idsByIndex[67]]);
     assert.deepEqual((await getPage('?query=%20market%20')).runs.map((run) => run.runId), [idsByIndex[68]]);
     assert.deepEqual((await getPage(`?query=${idsByIndex[69]!.toUpperCase()}`)).runs.map((run) => run.runId), [idsByIndex[69]]);
+    const relatedFirst = await getPage(`?parentRunId=${relatedParent}&limit=2`);
+    assert.deepEqual(relatedFirst.runs.map((run) => run.runId), [idsByIndex[1], idsByIndex[19]]);
+    const relatedCursor = JSON.parse(Buffer.from(relatedFirst.nextCursor!, 'base64url').toString('utf8')) as { filterHash: string };
+    assert.equal(relatedCursor.filterHash, sha256(JSON.stringify(['', '', relatedParent])));
+    assert.equal(relatedFirst.runs[0]?.parentRunId, relatedParent);
+    const relatedSecond = await getPage(`?parentRunId=${relatedParent}&limit=2&cursor=${relatedFirst.nextCursor}`);
+    assert.deepEqual(relatedSecond.runs.map((run) => run.runId), [idsByIndex[62]]);
+    assert.equal(relatedSecond.nextCursor, null);
+    assert.deepEqual((await getPage(`?parentRunId=${otherParent}`)).runs.map((run) => run.runId), [idsByIndex[3]]);
+    assert.deepEqual((await getPage(`?parentRunId=${relatedParent}&status=blocked`)).runs.map((run) => run.runId), [idsByIndex[62]]);
+    assert.deepEqual((await getPage(`?parentRunId=${idsByIndex[1]}`)).runs, []);
     const filteredFirst = await getPage('?query=%20DEMO%20&limit=2');
     const filteredSecond = await getPage(`?query=demo&limit=3&cursor=${filteredFirst.nextCursor}`);
     assert.deepEqual([...filteredFirst.runs, ...filteredSecond.runs].map((run) => run.runId),
@@ -724,6 +742,9 @@ test('run history searches beyond state, paginates by mtime and UUID, and skips 
       ['?limit=1&limit=51', 'Invalid input.'],
       [`?query=${'a'.repeat(201)}`, 'Run query is too long.'],
       ['?cursor=', 'Invalid run cursor.'], ['?cursor=!!!', 'Invalid run cursor.'],
+      ['?parentRunId=run-1', 'Invalid parent run ID.'],
+      [`?parentRunId=${relatedParent}&parentRunId=${otherParent}`, 'Invalid input.'],
+      [`?cursor=${relatedFirst.nextCursor}&parentRunId=${otherParent}`, 'Invalid run cursor.'],
       [`?cursor=${'a'.repeat(513)}`, 'Invalid run cursor.'],
       [`?cursor=${Buffer.from('{"version":1}').toString('base64url')}`, 'Invalid run cursor.'],
       [`?cursor=${firstPage.nextCursor}&query=archive_suite`, 'Invalid run cursor.'],

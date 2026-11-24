@@ -37,7 +37,7 @@ const runCursorSchema = z.object({
 }).strict();
 type RunCandidate = { id: string; mtime: number };
 type RunSummary = { runId: string; suiteId: string; status: QAReport['status']; startedAt: string; finishedAt: string;
-  caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection'] };
+  caseCount: number; passedCount: number; target: QAReport['target']; selection?: QAReport['selection']; parentRunId?: string };
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/;
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(MODULE_DIR, 'public');
@@ -74,8 +74,8 @@ class HTTPError extends Error {
 
 function invalid(message = 'Invalid input.'): never { throw new HTTPError(400, message); }
 function notFound(): never { throw new HTTPError(404, 'The requested item was not found.'); }
-function runFilterHash(query: string, status: string): string {
-  return sha256(JSON.stringify([query, status]));
+function runFilterHash(query: string, status: string, parentRunId: string): string {
+  return sha256(JSON.stringify(parentRunId ? [query, status, parentRunId] : [query, status]));
 }
 // The cursor is independent of page size, so clients may change limit between pages.
 function encodeRunCursor(candidate: RunCandidate, filterHash: string): string {
@@ -419,14 +419,17 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
     return { runId: item.runId, suiteId: item.suiteId, status: item.status, startedAt: item.startedAt,
       finishedAt: item.finishedAt, caseCount: item.cases.length,
       passedCount: item.cases.filter((entry) => entry.status === 'passed' || entry.status === 'flaky').length,
-      target: item.target, ...(item.selection ? { selection: item.selection } : {}) };
+      target: item.target, ...(item.selection ? { selection: item.selection } : {}),
+      ...(item.parentRunId ? { parentRunId: item.parentRunId } : {}) };
   }
-  async function runSummaries(limit: number, query = '', status = '', after?: RunCandidate): Promise<{ candidate: RunCandidate; summary: RunSummary }[]> {
+  async function runSummaries(limit: number, query = '', status = '', after?: RunCandidate,
+    parentRunId = ''): Promise<{ candidate: RunCandidate; summary: RunSummary }[]> {
     const history: { candidate: RunCandidate; summary: RunSummary }[] = [];
     for (const candidate of await runCandidates()) {
       if (after && (candidate.mtime > after.mtime || (candidate.mtime === after.mtime && candidate.id <= after.id))) continue;
       try {
         const { report: item } = await report(candidate.id, false);
+        if (parentRunId && item.parentRunId !== parentRunId) continue;
         if (status && item.status !== status) continue;
         if (query && ![item.suiteId, item.runId, item.target.name].some((field) => field.toLowerCase().includes(query))) continue;
         history.push({ candidate, summary: runSummary(item) });
@@ -478,7 +481,7 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         return;
       }
       if (url.pathname === '/api/runs') {
-        for (const key of ['query', 'status', 'limit', 'cursor']) {
+        for (const key of ['query', 'status', 'limit', 'cursor', 'parentRunId']) {
           if (url.searchParams.getAll(key).length > 1) invalid();
         }
         const query = (url.searchParams.get('query') ?? '').trim();
@@ -486,13 +489,15 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
         const normalizedQuery = query.toLowerCase();
         const status = url.searchParams.get('status') ?? '';
         if (status && !RUN_STATUSES.has(status as QAReport['status'])) invalid('Invalid run status.');
+        const parentRunId = url.searchParams.get('parentRunId') ?? '';
+        if (parentRunId && !RUN_ID.test(parentRunId)) invalid('Invalid parent run ID.');
         const rawLimit = url.searchParams.get('limit');
         if (rawLimit !== null && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit)) invalid('Invalid run limit.');
         const limit = rawLimit === null ? RUN_HISTORY_LIMIT : Number(rawLimit);
-        const filterHash = runFilterHash(normalizedQuery, status);
+        const filterHash = runFilterHash(normalizedQuery, status, parentRunId);
         const rawCursor = url.searchParams.get('cursor');
         const after = rawCursor === null ? undefined : decodeRunCursor(rawCursor, filterHash);
-        const rows = await runSummaries(limit + 1, normalizedQuery, status, after);
+        const rows = await runSummaries(limit + 1, normalizedQuery, status, after, parentRunId);
         const runs = rows.slice(0, limit);
         sendJSON(response, 200, { runs: runs.map(({ summary }) => summary),
           nextCursor: rows.length > limit ? encodeRunCursor(runs.at(-1)!.candidate, filterHash) : null });

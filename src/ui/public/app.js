@@ -5,7 +5,7 @@
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
   const defaultReportFilter = () => ({ search: '', status: 'all', sort: 'recorded', repeatedOnly: false });
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportParent: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportParent: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false, parentRunId: '' }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -303,23 +303,33 @@
       const button = el('button', 'button', t('app.load')); button.type = 'button'; button.addEventListener('click', () => loadSuite(suite.file)); row.append(copy, button); host.append(row);
     }
   }
-  function historyFilters() { return { query: $('history-search').value.trim(), status: $('history-status-filter').value }; }
+  function historyFilters() { return { query: $('history-search').value.trim(), status: $('history-status-filter').value, parentRunId: app.history.parentRunId }; }
   function renderHistory() {
     const history = app.history;
     const host = $('history-list'); replace(host);
     host.setAttribute('aria-busy', String(history.loading));
     if (!history.runs.length) {
-      const { query, status } = historyFilters();
+      const { query, status, parentRunId } = historyFilters();
       const key = history.loading ? 'history.loading' : history.error && !history.loaded ? 'history.loadError'
-        : query ? 'app.historyNoSearchMatches' : status ? 'app.historyNoStatusMatches'
+        : parentRunId && status ? 'history.noRerunsWithStatus'
+          : parentRunId ? 'history.noReruns' : query ? 'app.historyNoSearchMatches' : status ? 'app.historyNoStatusMatches'
           : app.state?.active ? 'app.historyActiveEmpty' : 'app.historyEmpty';
       host.append(el('p', 'empty', t(key)));
+    }
+    if (history.parentRunId) {
+      const relation = el('div', 'actions');
+      relation.append(el('p', 'hint', t('history.relatedTo', { runId: history.parentRunId })));
+      const clear = el('button', 'button quiet', t('history.showAllRuns'));
+      clear.type = 'button'; clear.dataset.action = 'clear-related-runs';
+      clear.addEventListener('click', () => { history.parentRunId = ''; refreshHistory(); });
+      relation.append(clear); host.prepend(relation);
     }
     const pair = comparisonPair();
     for (const run of history.runs) {
       const row = el('div', 'list-row history-run-row'); row.dataset.runId = run.runId;
       const copy = el('div'); copy.append(el('strong', '', `${run.suiteId} · ${i18n.status(run.status)}`), el('small', '', t('app.runMeta', { date: formatDate(run.startedAt), target: targetDisplay(run.target), passed: run.passedCount ?? 0, total: run.caseCount ?? 0, id: run.runId })));
       const scope = selectionScope(run.selection); if (scope) copy.append(el('small', 'selection-scope', scope));
+      if (run.parentRunId) copy.append(el('small', 'hint', t('history.parentRun', { runId: run.parentRunId })));
       const actions = el('div', 'run-row-actions');
       const button = el('button', 'button', t('app.viewReport')); button.type = 'button'; button.dataset.action = 'view-report'; button.disabled = run.status === 'running' || run.status === 'stopping'; button.addEventListener('click', () => loadReport(run.runId)); actions.append(button);
       for (const [role, label] of [['baseline', 'comparison.useBaseline'], ['current', 'comparison.useCurrent']]) {
@@ -347,6 +357,7 @@
     const history = app.history;
     const append = cursor !== null;
     const params = new URLSearchParams({ query: filters.query, status: filters.status, limit: '50' });
+    if (filters.parentRunId) params.set('parentRunId', filters.parentRunId);
     if (append) params.set('cursor', cursor);
     try {
       const result = await api(`/api/runs?${params}`);
@@ -397,6 +408,14 @@
     history.loading = true; history.kind = 'more'; history.error = null;
     renderHistory();
     void fetchHistoryPage(request, historyFilters(), history.nextCursor);
+  }
+  function showRelatedRuns(runId) {
+    app.history.parentRunId = runId;
+    $('history-search').value = '';
+    $('history-status-filter').value = '';
+    view('history');
+    refreshHistory();
+    $('history-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function recentRunsChanged() {
     const history = app.history;
@@ -915,6 +934,10 @@
       }
       host.append(parent);
     }
+    const related = el('button', 'button quiet', t('history.findReruns'));
+    related.type = 'button'; related.dataset.action = 'find-reruns';
+    related.addEventListener('click', () => showRelatedRuns(report.runId));
+    host.append(related);
     if (report.usage) host.append(el('p', 'hint', t('app.usage', { tokens: report.usage.modelTokens ?? t('app.unavailable'), cost: typeof report.usage.estimatedCostUsd === 'number' ? `$${report.usage.estimatedCostUsd.toFixed(4)}` : t('app.unavailable') })));
     if (report.errors?.length) host.append(el('p', 'report-errors', report.errors.join('\n')));
     const caseList = el('div'); caseList.id = 'report-case-list'; host.append(caseList);
@@ -954,7 +977,7 @@
     window.addEventListener('beforeunload', warnBeforeUnload);
     document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => view(button.dataset.view)));
     $('library-search').addEventListener('input', renderLibrary);
-    $('history-search').addEventListener('input', () => refreshHistory(150));
+    $('history-search').addEventListener('input', () => { app.history.parentRunId = ''; refreshHistory(150); });
     $('history-status-filter').addEventListener('change', () => refreshHistory());
     $('history-refresh').addEventListener('click', () => refreshHistory());
     $('history-load-more').addEventListener('click', loadMoreHistory);

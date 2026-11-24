@@ -21,6 +21,8 @@ try {
     const runId = randomUUID();
     const value = {
       schemaVersion: 'flow-qa/report-1', runId, suiteId: index === 0 ? suite.id : `history-suite-${index}`,
+      ...(index === 1 || index === 62 ? { parentRunId: fixtures[0].runId } : {}),
+      ...(index === 3 ? { parentRunId: randomUUID() } : {}),
       suiteHash: sha256(`${JSON.stringify(suite, null, 2)}\n`),
       target: { name: index === 1 ? '오래된-대상' : 'demo', url: 'http://127.0.0.1:4178' },
       startedAt: at.toISOString(), finishedAt: at.toISOString(), status: index < 2 ? 'failed' : statuses[index % statuses.length], errors: [],
@@ -115,6 +117,16 @@ try {
   await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), oldest.runId);
   const downloaded = page.waitForEvent('download'); await page.locator('#report-json').click();
   assert.equal(JSON.parse(await readFile(await (await downloaded).path(), 'utf8')).runId, oldest.runId);
+  await page.locator('[data-action="find-reruns"]').click(); await idle();
+  assert.deepEqual(await rows().evaluateAll(elements => elements.map(row => row.dataset.runId)),
+    [fixtures[62].runId, fixtures[1].runId]);
+  assert.match(await page.locator('#history-list').textContent(), /재실행/);
+  await filter('passed');
+  assert.equal(await rows().count(), 0);
+  assert.match(await page.locator('#history-list').textContent(), /이 상태에 해당하는 연결된 재실행이 없습니다/);
+  await filter('');
+  await page.locator('[data-action="clear-related-runs"]').click(); await idle();
+  assert.equal(await rows().count(), 50);
   await search('no-such-history');
   assert.equal(await rows().count(), 0);
   assert.ok((await page.locator('#report-heading').textContent()).includes(oldest.runId), 'Search preserves the open report.');

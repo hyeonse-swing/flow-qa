@@ -72,6 +72,8 @@ From version `0.2.6`, **Case library** filters saved suites as you type in **Sea
 
 **Run history → Search runs** matches part of a suite ID, run ID, or target name. Matching ignores letter case and surrounding whitespace, and supports Korean target names. Search combines with **Run status**; clear the search to return to the selected status. From `0.6.0`, search covers all valid saved reports, including older records. Target URLs and individual case content are not searched. Queries are limited to 200 characters.
 
+**Find reruns of this run** in a detailed report opens Run history filtered by the exact original run ID recorded in each child. The list can be paginated and narrowed by status. **Show all runs** clears the relation, and typing in Search runs switches back to the ordinary text search.
+
 Results load 50 at a time, newest first by run-directory modification time, with run ID as a stable tie-breaker. **Load more** appends older matches. The displayed count describes loaded matches, not a global total. End-of-results, loading, and retry guidance distinguish an empty result from an unavailable request. A failed page request preserves loaded rows so you can retry.
 
 Changing search or status restarts at the first page. The query, status, and loaded pages stay through navigation and language changes, and reset on page reload. The open report, its downloads, and scenario draft stay intact. A delayed response from an older query cannot replace newer results. Older reports support the same report downloads and failed/error-case preparation.
