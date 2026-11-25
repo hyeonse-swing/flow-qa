@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { localeFromEnv, localized, localizeProductMessage, type Locale } from './i18n.ts';
 import { configSchema, idSchema, modelSchema, targetSchema } from './schema.ts';
-import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, writeConfig, writeJSON } from './workspace.ts';
+import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, withConfigLock, writeConfig, writeJSON } from './workspace.ts';
 import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
 import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-selection.ts';
@@ -177,7 +177,6 @@ export async function main(args: string[]): Promise<void> {
       console.log(localized(locale, `Workspace: ${dir}\nCreated: ${files.join(', ') || 'none (existing files preserved)'}`, `워크스페이스: ${dir}\n생성: ${files.join(', ') || '없음 (기존 파일 보존)'}`)); return;
     }
     if (command === 'connect') {
-      const config = await readConfig(workspace);
       const name = idSchema.parse(required(arg, localized(locale, 'Target name', '대상 이름'), locale));
       const platform = values.platform ?? 'web';
       if (!['web', 'ios', 'android'].includes(platform)) throw new Error(localized(locale, 'Target platform must be web, ios, or android.', '대상 플랫폼은 web, ios, android 중 하나여야 합니다.'));
@@ -187,16 +186,23 @@ export async function main(args: string[]): Promise<void> {
       const target = targetSchema.parse(platform === 'web'
         ? { url: required(values.url, '--url', locale) }
         : { kind: 'mobile', platform, bundleId: required(values['bundle-id'], '--bundle-id', locale), device: required(values.device, '--device', locale) });
-      config.targets[name] = registrationTarget(target, config.targets[name]);
-      await writeConfig(workspace, config);
-      console.log(localized(locale, `Target ${name} saved: ${targetLabel(config.targets[name]!)}. No app has been launched.`, `대상 ${name} 저장: ${targetLabel(config.targets[name]!)}. 앱은 실행하지 않았습니다.`)); return;
+      const saved = await withConfigLock(workspace, async () => {
+        const config = await readConfig(workspace);
+        config.targets[name] = registrationTarget(target, config.targets[name]);
+        await writeConfig(workspace, config);
+        return config.targets[name]!;
+      });
+      console.log(localized(locale, `Target ${name} saved: ${targetLabel(saved)}. No app has been launched.`, `대상 ${name} 저장: ${targetLabel(saved)}. 앱은 실행하지 않았습니다.`)); return;
     }
     if (command === 'model') {
       if (arg !== 'planner' && arg !== 'agent') throw new Error(localized(locale, 'Model role must be planner or agent.', '모델 종류는 planner 또는 agent여야 합니다.'));
-      const config = await readConfig(workspace);
       const base = { baseURL: required(values.url, '--url', locale), model: required(values.model, '--model', locale), ...(values['key-env'] ? { apiKeyEnv: values['key-env'] } : {}) };
-      config[arg] = modelSchema.parse(base);
-      await writeConfig(workspace, config);
+      const connection = modelSchema.parse(base);
+      await withConfigLock(workspace, async () => {
+        const config = await readConfig(workspace);
+        config[arg] = connection;
+        await writeConfig(workspace, config);
+      });
       console.log(localized(locale, `${arg} model connection saved. No model call has been made. API key values are not saved in the configuration file.`, `${arg} 모델 연결 설정 저장. 실제 호출 전입니다. API 키 값은 설정 파일에 저장하지 않습니다.`)); return;
     }
     if (command === 'plan') {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
@@ -8,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { createPreferenceScript } from '@hyeonse/design-system/preferences';
 import { PlannerError } from '../src/planner.ts';
 import { failureReport, renderMarkdown, type QAReport } from '../src/report.ts';
@@ -16,6 +18,9 @@ import { targetFingerprint } from '../src/targets.ts';
 import type { Config, Suite } from '../src/schema.ts';
 import { startUIServer, type UIServerHandle } from '../src/ui/server.ts';
 import { initWorkspace, readConfig, readSuite, sha256 } from '../src/workspace.ts';
+
+const runCli = promisify(execFile);
+const cli = fileURLToPath(new URL('../bin/flow-qa.mjs', import.meta.url));
 
 
 async function fixture(options: Parameters<typeof startUIServer>[0] = { workspace: '' }) {
@@ -72,6 +77,20 @@ test('UI target registration canonicalizes new roots and keeps an older stored r
     assert.equal(targets.find(target => target.name === 'fresh')?.url, 'http://127.0.0.1:43982');
     assert.deepEqual(targets.find(target => target.name === 'legacy'), { name: 'legacy', url: 'http://127.0.0.1:43982/', description: 'New label', targetFingerprint: oldFingerprint });
     assert.equal((await readConfig(app.workspace)).targets.legacy?.description, 'New label');
+  } finally { await app.close(); }
+});
+
+test('UI and CLI saves to the same workspace retain both targets', async () => {
+  const app = await fixture();
+  try {
+    const [response] = await Promise.all([
+      post(app.server, app.token, '/api/targets', { name: 'from-ui', url: 'https://ui.example.com' }),
+      runCli(process.execPath, [cli, 'connect', 'from-cli', '--url', 'https://cli.example.com', '--workspace', app.workspace]),
+    ]);
+    assert.equal(response.status, 200);
+    const config = await readConfig(app.workspace);
+    assert.deepEqual(config.targets['from-ui'], { url: 'https://ui.example.com', description: '' });
+    assert.deepEqual(config.targets['from-cli'], { url: 'https://cli.example.com', description: '' });
   } finally { await app.close(); }
 });
 

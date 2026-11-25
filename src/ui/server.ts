@@ -16,7 +16,7 @@ import { MAX_SAVED_REPORT_BYTES, RUN_ID, parseArchivedReportEnvelope, renderSave
 import { compareReports, ComparisonError, renderComparisonMarkdown } from '../run-comparison.ts';
 import { configSchema, idSchema, modelSchema, suiteSchema, targetSchema, type Config, type PlannerConnection, type Suite } from '../schema.ts';
 import { registrationTarget, targetFingerprint } from '../targets.ts';
-import { CONFIG_FILE, sha256 } from '../workspace.ts';
+import { CONFIG_FILE, sha256, withConfigLock } from '../workspace.ts';
 
 const MAX_BODY = 256 * 1024;
 const MAX_FLOW = 128 * 1024;
@@ -706,9 +706,11 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
           z.object({ name: idSchema, kind: z.literal('web').optional(), url: z.string(), description: z.string().optional() }).strict(),
         ]), body);
         const target = parse(targetSchema, input);
-        const settings = await config();
-        settings.targets[name] = registrationTarget(target, settings.targets[name]);
-        await updateConfig(settings);
+        await withConfigLock(workspace, async () => {
+          const settings = await config();
+          settings.targets[name] = registrationTarget(target, settings.targets[name]);
+          await updateConfig(settings);
+        }, false);
       });
       sendJSON(response, 200, { ok: true }); return;
     }
@@ -718,11 +720,14 @@ export async function startUIServer(options: UIServerOptions): Promise<UIServerH
           z.object({ role: z.enum(['planner', 'agent']), clear: z.literal(true) }).strict(),
           z.object({ role: z.enum(['planner', 'agent']), baseURL: z.string(), model: z.string(), apiKeyEnv: z.string().optional() }).strict(),
         ]), body);
-        const settings = await config();
-        if ('clear' in change) delete settings[change.role];
-        else settings[change.role] = parse(modelSchema, { baseURL: change.baseURL, model: change.model,
+        const connection = 'clear' in change ? undefined : parse(modelSchema, { baseURL: change.baseURL, model: change.model,
           ...(change.apiKeyEnv === undefined ? {} : { apiKeyEnv: change.apiKeyEnv }) });
-        await updateConfig(settings);
+        await withConfigLock(workspace, async () => {
+          const settings = await config();
+          if (connection) settings[change.role] = connection;
+          else delete settings[change.role];
+          await updateConfig(settings);
+        }, false);
       });
       sendJSON(response, 200, { ok: true }); return;
     }

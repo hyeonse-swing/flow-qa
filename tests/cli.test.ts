@@ -78,6 +78,25 @@ test('reruns lists only direct saved children in UI history order and prints reu
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('simultaneous CLI target and model saves keep every successful change', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-concurrent-config-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', workspace]);
+  try {
+    await qa('init');
+    await Promise.all([
+      qa('connect', 'alpha', '--url', 'https://alpha.example.com'),
+      qa('connect', 'beta', '--url', 'https://beta.example.com'),
+      qa('model', 'planner', '--url', 'https://planner.example.com/v1', '--model', 'planner-v1'),
+      qa('model', 'agent', '--url', 'https://agent.example.com/v1', '--model', 'agent-v1'),
+    ]);
+    const config = JSON.parse(await readFile(join(workspace, 'flowqa.config.json'), 'utf8'));
+    assert.deepEqual(Object.keys(config.targets).sort(), ['alpha', 'beta', 'demo']);
+    assert.equal(config.planner.model, 'planner-v1');
+    assert.equal(config.agent.model, 'agent-v1');
+    assert.deepEqual((await readdir(workspace)).filter(name => name.startsWith('.flowqa-config-')), []);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
 test('CLI connect canonicalizes new roots but retains old root spelling on re-registration', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-root-cli-'));
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);

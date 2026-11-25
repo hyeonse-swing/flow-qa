@@ -1,9 +1,78 @@
+import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { configSchema, suiteSchema, type Config, type Suite } from './schema.ts';
 
 export const CONFIG_FILE = 'flowqa.config.json';
+const localConfigWriters = new Map<string, Promise<void>>();
+
+/** Serialize read-modify-write changes from CLI processes and the local UI. */
+export async function withConfigLock<T>(workspace: string, change: () => Promise<T>, allowSymlink = true): Promise<T> {
+  const alias = resolve(workspace, CONFIG_FILE);
+  if (!allowSymlink && (await lstat(alias)).isSymbolicLink()) throw new Error('Invalid configuration file path.');
+  let file: string;
+  try { file = await realpath(alias); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('flowqa.config.json is missing. Run flow-qa init first.');
+    throw error;
+  }
+  const lockDirectory = resolve(dirname(file), '.flowqa');
+  await mkdir(lockDirectory, { recursive: true, mode: 0o700 });
+  const directoryInfo = await lstat(lockDirectory);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || await realpath(lockDirectory) !== lockDirectory) {
+    throw new Error('Invalid configuration lock path.');
+  }
+  const lockFile = resolve(lockDirectory, `config-lock-${sha256(file)}.sqlite`);
+  const previous = localConfigWriters.get(lockFile);
+  let releaseLocal!: () => void;
+  const localTurn = new Promise<void>(resolveTurn => { releaseLocal = resolveTurn; });
+  localConfigWriters.set(lockFile, localTurn);
+  if (previous) await previous;
+  try {
+    const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
+    let handle;
+    try { handle = await open(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | noFollow, 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      handle = await open(lockFile, constants.O_RDWR | noFollow);
+    }
+    try {
+      const opened = await handle.stat();
+      const pathInfo = await lstat(lockFile);
+      if (!opened.isFile() || !pathInfo.isFile() || pathInfo.isSymbolicLink() || pathInfo.nlink !== 1 ||
+          opened.dev !== pathInfo.dev || opened.ino !== pathInfo.ino ||
+          process.platform !== 'win32' && (opened.mode & 0o077) !== 0) {
+        throw new Error('Invalid configuration lock file.');
+      }
+    } finally { await handle.close(); }
+    const { DatabaseSync } = await import('node:sqlite');
+    const database = new DatabaseSync(lockFile);
+    const deadline = Date.now() + 20_000;
+    let acquired = false;
+    try {
+      database.exec('PRAGMA busy_timeout = 0');
+      while (!acquired) {
+        try {
+          database.exec('BEGIN IMMEDIATE');
+          acquired = true;
+        } catch (error) {
+          if ((error as { errcode?: number }).errcode !== 5) throw error;
+          if (Date.now() >= deadline) throw new Error('Could not update configuration while another process is saving it. Retry the command.');
+          await delay(40);
+        }
+      }
+      return await change();
+    } finally {
+      if (acquired) database.exec('ROLLBACK');
+      database.close();
+    }
+  } finally {
+    releaseLocal();
+    if (localConfigWriters.get(lockFile) === localTurn) localConfigWriters.delete(lockFile);
+  }
+}
 export async function readConfig(workspace: string): Promise<Config> {
   try { return configSchema.parse(JSON.parse(await readFile(resolve(workspace, CONFIG_FILE), 'utf8'))); }
   catch (error) {

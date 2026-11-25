@@ -1,10 +1,132 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, open, readdir, readlink, rename, rm, stat, symlink, unlink, writeFile, readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { chmod, mkdir, mkdtemp, open, readdir, readlink, realpath, rename, rm, stat, symlink, unlink, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import type { Config } from '../src/schema.ts';
-import { initWorkspace, readConfig, readSuite, verifySuiteSource, writeConfig } from '../src/workspace.ts';
+import { initWorkspace, readConfig, readSuite, sha256, verifySuiteSource, withConfigLock, writeConfig } from '../src/workspace.ts';
+
+test('configuration lock is released by the OS after a writer exits', { skip: process.platform === 'win32' }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-lock-exit-'));
+  await initWorkspace(workspace);
+  const modulePath = fileURLToPath(new URL('../src/workspace.ts', import.meta.url));
+  const script = `import { withConfigLock } from ${JSON.stringify(modulePath)};
+    await withConfigLock(${JSON.stringify(workspace)}, async () => {
+      process.stdout.write('LOCKED\\n');
+      await new Promise(() => setInterval(() => {}, 1000));
+    });`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Child did not acquire the configuration lock.')), 5_000);
+      child.stdout.once('data', data => { clearTimeout(timeout); data.toString().includes('LOCKED') ? resolve() : reject(new Error('Unexpected child output.')); });
+      child.once('error', reject);
+      child.once('exit', () => reject(new Error('Child exited before acquiring the configuration lock.')));
+    });
+    const exit = once(child, 'exit');
+    child.kill('SIGKILL');
+    await exit;
+    await withConfigLock(workspace, async () => {
+      const settings = await readConfig(workspace);
+      settings.retries = 2;
+      await writeConfig(workspace, settings);
+    });
+    assert.equal((await readConfig(workspace)).retries, 2);
+    const locks = (await readdir(join(workspace, '.flowqa'))).filter(name => name.startsWith('config-lock-'));
+    assert.equal(locks.length, 1);
+    if (process.platform !== 'win32') assert.equal((await stat(join(workspace, '.flowqa', locks[0]!))).mode & 0o077, 0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('configuration aliases share the same lock for updates to one target file', { skip: process.platform === 'win32' }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'flow-qa-config-alias-'));
+  const first = join(root, 'first');
+  const second = join(root, 'second');
+  const shared = join(root, 'shared.json');
+  try {
+    await initWorkspace(first);
+    await initWorkspace(second);
+    await rename(join(first, 'flowqa.config.json'), shared);
+    await unlink(join(second, 'flowqa.config.json'));
+    await symlink(shared, join(first, 'flowqa.config.json'));
+    await symlink(shared, join(second, 'flowqa.config.json'));
+    await Promise.all([first, second].map(async (workspace, index) => withConfigLock(workspace, async () => {
+      const settings = await readConfig(workspace);
+      settings.targets[`alias${index}`] = { url: `https://alias${index}.example.com`, description: '' };
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 80));
+      await writeConfig(workspace, settings);
+    })));
+    const settings = await readConfig(first);
+    assert.deepEqual(Object.keys(settings.targets).sort(), ['alias0', 'alias1', 'demo']);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('another local writer cannot release the first writer’s SQLite lock', { skip: process.platform === 'win32' }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-lock-overlap-'));
+  await initWorkspace(workspace);
+  let releaseFirst!: () => void;
+  let firstEntered!: () => void;
+  const holdFirst = new Promise<void>(resolveHold => { releaseFirst = resolveHold; });
+  const enteredFirst = new Promise<void>(resolveEntered => { firstEntered = resolveEntered; });
+  const first = withConfigLock(workspace, async () => { firstEntered(); await holdFirst; });
+  await enteredFirst;
+  const second = withConfigLock(workspace, async () => {});
+  const modulePath = fileURLToPath(new URL('../src/workspace.ts', import.meta.url));
+  const script = `import { withConfigLock } from ${JSON.stringify(modulePath)};
+    process.stdout.write('STARTED\\n');
+    await withConfigLock(${JSON.stringify(workspace)}, async () => process.stdout.write('ENTERED\\n'));`;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk.toString(); });
+  try {
+    await new Promise<void>((resolveStarted, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Child did not start.')), 5_000);
+      child.stdout.on('data', () => { if (output.includes('STARTED')) { clearTimeout(timeout); resolveStarted(); } });
+      child.once('error', reject);
+    });
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+    assert.equal(output.includes('ENTERED'), false);
+    const exited = once(child, 'exit');
+    releaseFirst();
+    await Promise.all([first, second, exited]);
+    assert.equal(output.includes('ENTERED'), true);
+  } finally {
+    releaseFirst();
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await Promise.allSettled([first, second]);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('configuration lock refuses a symlink and leaves its destination untouched', { skip: process.platform === 'win32' }, async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-lock-path-'));
+  try {
+    await initWorkspace(workspace);
+    const target = join(workspace, 'unrelated.txt');
+    await writeFile(target, 'keep this file');
+    const config = await realpath(join(workspace, 'flowqa.config.json'));
+    const lockFile = join(workspace, '.flowqa', `config-lock-${sha256(config)}.sqlite`);
+    await symlink(target, lockFile);
+    await assert.rejects(withConfigLock(workspace, async () => {}), /ELOOP|Invalid configuration lock file/);
+    assert.equal(await readFile(target, 'utf8'), 'keep this file');
+    await unlink(lockFile);
+    await mkdir(lockFile);
+    await assert.rejects(withConfigLock(workspace, async () => {}), /EISDIR|Invalid configuration lock file/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('a missing configuration still advises initialization before acquiring a lock', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-missing-config-'));
+  try {
+    await assert.rejects(withConfigLock(workspace, async () => {}), /Run flow-qa init first/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
 
 test('init yields a runnable example and never overwrites existing user files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-workspace-'));

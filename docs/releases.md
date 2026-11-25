@@ -1,5 +1,9 @@
 # Releases and verification
 
+## 0.10.8 — Concurrent configuration updates
+
+CLI `connect` and `model` commands and the local UI's target and model settings now lock the same canonical configuration file before reading and saving it. Concurrent commands that update different targets or model roles retain every successful change. The lock is stored in the private `.flowqa` directory beside the actual configuration file, including when a CLI workspace uses a symlink to that file. A terminated writer releases its SQLite lock automatically, so another command can retry. Each save still replaces the complete JSON file after it is written.
+
 ## 0.10.1 — Hyeonse Design System 0.5.0
 
 The local UI packages the CSS, preference module, and MIT license from the public Hyeonse Design System 0.5.0 archive. The installed Flow QA package serves byte-identical copies of these files.
@@ -347,7 +351,7 @@ The npm trusted publisher is configured for GitHub repository `hyeonse-swing/flo
 ## 0.1.3
 
 - `doctor` reports whether each configured planner or agent key environment variable is present, missing, or not configured. English and Korean diagnostics show no credential values and make no model requests. The command remains informational.
-- CLI target and model configuration updates write a private temporary file, synchronize it, and replace the configuration only after the new JSON is complete. Existing initialization and exclusive case-file creation behavior are preserved. This protects against partially written configuration during process interruption; it does not serialize concurrent CLI updates or guarantee rename durability after power loss.
+- At this release, CLI target and model configuration updates wrote a private temporary file, synchronized it, and replaced the configuration only after the new JSON was complete. Existing initialization and exclusive case-file creation behavior were preserved. This protected against partially written configuration during process interruption. Concurrent CLI updates were not serialized at this release, and rename durability after power loss was not guaranteed.
 - CI runs the existing test, browser, UI, and package-install checks on Ubuntu and macOS before publishing. Successful npm publication and its consumer smoke check now also create the corresponding GitHub release.
 
 - Package: [`@ihyeon/flow-qa@0.1.3`](https://www.npmjs.com/package/@ihyeon/flow-qa/v/0.1.3)
