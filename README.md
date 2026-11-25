@@ -78,6 +78,8 @@ When the saved suite, target, and selected cases still match that preparation, t
 
 From an original report, **Find reruns of this run** shows directly linked runs across the full saved history. Use **Load more** for older matches or **Show all runs** to clear the relation.
 
+In the CLI, `flow-qa reruns .flowqa/runs/<original-run-id> --workspace my-qa` lists direct reruns with their status and saved directory. Pass a listed directory to `flow-qa report` or compare it with the original using `flow-qa compare` and the same `--workspace`. The command checks the saved reports and skips incomplete entries.
+
 From `0.8.0`, **Detailed report** supports case/error-text search, status filters, and **Failed/error only**. Use **At least 2 attempts** (0.8.7) to see only cases with multiple recorded attempts. Counts distinguish displayed matches from all recorded cases. Markdown/JSON downloads and failed/error preparation retain the full report scope. To save just the filtered IDs in the displayed order, choose **Download visible case IDs** (0.8.6). See [report case exploration](docs/ui.md#explore-cases-in-a-report).
 
 ## Compare recorded runs

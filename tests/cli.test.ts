@@ -1,17 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir, rename, symlink, utimes } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { playwrightInstallInvocation } from '../src/cli.ts';
-import { normalizeReport1 } from '../src/report.ts';
+import { failureReport, normalizeReport1 } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL('../bin/flow-qa.mjs', import.meta.url));
+
+test('reruns lists only direct saved children in UI history order and prints reusable paths', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'flow-qa-reruns-cli-'));
+  const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', workspace]);
+  const ids = {
+    parent: '0192f3a0-0000-7000-8000-000000000001',
+    older: '0192f3a0-0000-7000-8000-000000000002',
+    newer: '0192f3a0-0000-7000-8000-000000000003',
+    grandchild: '0192f3a0-0000-7000-8000-000000000004',
+    other: '0192f3a0-0000-7000-8000-000000000005',
+    broken: '0192f3a0-0000-7000-8000-000000000006',
+    linked: '0192f3a0-0000-7000-8000-000000000007',
+  };
+  const runPath = (id: string) => join(workspace, '.flowqa', 'runs', id);
+  try {
+    await qa('init');
+    const suite = JSON.parse(await readFile(join(workspace, 'cases/task-flow.json'), 'utf8')) as Suite;
+    const save = async (id: string, parentRunId?: string, status: 'passed' | 'failed' = 'failed') => {
+      const dir = runPath(id);
+      await mkdir(dir, { recursive: true });
+      const report = failureReport({
+        suite, runId: id, ...(parentRunId ? { parentRunId } : {}), suiteHash: 'a'.repeat(64),
+        target: { name: 'demo', url: 'https://example.test' },
+        startedAt: '2026-11-25T00:00:00.000Z', finishedAt: '2026-11-25T00:01:00.000Z',
+        blockedReasons: new Map(),
+      }, status, 'Observed failure');
+      await writeFile(join(dir, 'qa-report.json'), JSON.stringify(report));
+      await writeFile(join(dir, 'qa-report.md'), '# Saved report\n');
+      return dir;
+    };
+    await save(ids.parent);
+    assert.match((await qa('reruns', `.flowqa/runs/${ids.parent}`, '--lang', 'en')).stdout, /No runs were prepared/);
+    await save(ids.older, ids.parent);
+    await save(ids.newer, ids.parent, 'passed');
+    await save(ids.grandchild, ids.older);
+    await save(ids.other, ids.newer);
+    await mkdir(runPath(ids.broken));
+    await writeFile(join(runPath(ids.broken), 'qa-report.json'), '{invalid');
+    await save(ids.linked, ids.parent);
+    await rm(runPath(ids.linked), { recursive: true });
+    await symlink(runPath(ids.parent), runPath(ids.linked));
+    await utimes(runPath(ids.older), new Date('2026-11-25T00:00:00.000Z'), new Date('2026-11-25T00:00:00.000Z'));
+    await utimes(runPath(ids.newer), new Date('2026-11-25T00:01:00.000Z'), new Date('2026-11-25T00:01:00.000Z'));
+    const english = (await qa('reruns', `.flowqa/runs/${ids.parent}`, '--lang', 'en')).stdout.trim().split('\n');
+    assert.deepEqual(english, [
+      `passed\t.flowqa/runs/${ids.newer}`,
+      `failed\t.flowqa/runs/${ids.older}`,
+    ]);
+    assert.match((await qa('report', `.flowqa/runs/${ids.newer}`)).stdout, /Saved report/);
+    assert.match((await qa('compare', `.flowqa/runs/${ids.older}`, `.flowqa/runs/${ids.newer}`)).stdout, /Comparing the same suite/);
+    assert.equal((await qa('reruns', `.flowqa/runs/${ids.parent}`, '--lang', 'ko')).stdout.trim().split('\n').length, 2);
+    assert.match((await qa('reruns', `.flowqa/runs/${ids.grandchild}`, '--lang', 'ko')).stdout, /재실행이 없습니다/);
+    const runsRoot = join(workspace, '.flowqa', 'runs');
+    await rename(runsRoot, join(workspace, 'saved-runs'));
+    await symlink(join(workspace, 'saved-runs'), runsRoot);
+    await assert.rejects(qa('reruns', `.flowqa/runs/${ids.parent}`), /Invalid workspace run path/);
+    await rm(runsRoot);
+    await rename(join(workspace, 'saved-runs'), runsRoot);
+    const flowqa = join(workspace, '.flowqa');
+    await rename(flowqa, join(workspace, 'saved-flowqa'));
+    await symlink(join(workspace, 'saved-flowqa'), flowqa);
+    await assert.rejects(qa('reruns', `.flowqa/runs/${ids.parent}`), /Invalid workspace run path/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 test('CLI connect canonicalizes new roots but retains old root spelling on re-registration', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'flow-qa-root-cli-'));
   const qa = (...args: string[]) => exec(process.execPath, [bin, ...args, '--workspace', dir]);

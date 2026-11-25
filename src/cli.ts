@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, mkdir, access, stat } from 'node:fs/promises';
-import { resolve, dirname, basename } from 'node:path';
+import { readFile, writeFile, mkdir, access, stat, lstat, readdir, realpath, open } from 'node:fs/promises';
+import { resolve, dirname, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { localeFromEnv, localized, localizeProductMessage, type Locale } from './i18n.ts';
@@ -11,7 +11,7 @@ import { buildPlanningPrompt, planFlow } from './planner.ts';
 import { compileSuite } from './compiler.ts';
 import { CaseSelectionError, isReportSelectionValid, selectCases } from './case-selection.ts';
 import { runSuite } from './engine.ts';
-import { renderSavedMarkdown, type QAReport } from './report.ts';
+import { MAX_SAVED_REPORT_BYTES, RUN_ID, parseArchivedReportEnvelope, renderSavedMarkdown, type QAReport } from './report.ts';
 import { registrationTarget, sameReportTarget, targetLabel, type ReportTarget } from './targets.ts';
 import { compareCaseSteps } from './step-comparison.ts';
 import { createAgentHandoff, reviewAgentHandoff } from './agent-handoff.ts';
@@ -39,6 +39,7 @@ Usage: flow-qa <command> [arguments] [options]
   agent-review <handoff-dir> <result.json>
                                       Check agent-supplied findings and evidence references
   report <run-directory>              View a saved QA report
+  reruns <run-directory>              List runs prepared from a saved report
   compare <run-a> <run-b>              Compare case results and authored steps
   ui [--demo] [--port 4310]           Start the local QA UI
   browser install [--with-deps]       Install this package's Playwright Chromium
@@ -70,6 +71,7 @@ Local example: flow-qa ui --demo
   agent-review <handoff-dir> <result.json>
                                       에이전트 관찰 결과와 증거 파일 참조 검사
   report <run-directory>              저장된 QA 리포트 보기
+  reruns <run-directory>              저장된 리포트에서 시작한 재실행 찾기
   compare <run-a> <run-b>             케이스 결과와 원본 단계 비교
   ui [--demo] [--port 4310]           로컬 QA 화면 실행
   browser install [--with-deps]       패키지의 Playwright Chromium 설치
@@ -288,6 +290,62 @@ export async function main(args: string[]): Promise<void> {
       try { content = renderSavedMarkdown(JSON.parse(await readFile(resolve(runDirectory, 'qa-report.json'), 'utf8')), content, locale); }
       catch { /* Preserve the saved Markdown when normalized JSON is absent or malformed. */ }
       console.log(content.replace(/\u001b/g, '')); return;
+    }
+    if (command === 'reruns') {
+      if (second) throw new Error(localized(locale, 'reruns accepts one run directory.', 'reruns에는 실행 폴더 하나만 지정하세요.'));
+      const canonicalWorkspace = await realpath(workspace);
+      let root = canonicalWorkspace;
+      for (const part of ['.flowqa', 'runs']) {
+        root = join(root, part);
+        const info = await lstat(root);
+        if (!info.isDirectory() || info.isSymbolicLink() || await realpath(root) !== root) {
+          throw new Error(localized(locale, 'Invalid workspace run path.', '작업 공간의 실행 경로가 유효하지 않습니다.'));
+        }
+      }
+      const selectedDir = resolve(workspace, required(arg, localized(locale, 'Run directory', '실행 폴더'), locale));
+      const originalId = basename(selectedDir);
+      const selectedInfo = await lstat(selectedDir);
+      if (!RUN_ID.test(originalId) || selectedInfo.isSymbolicLink() ||
+        await realpath(selectedDir) !== join(root, originalId)) {
+        throw new Error(localized(locale, 'Choose a saved run in this workspace.', '이 작업 공간에 저장된 실행을 선택하세요.'));
+      }
+      const readReport = async (id: string): Promise<QAReport | undefined> => {
+        const dir = join(root, id);
+        const dirInfo = await lstat(dir);
+        if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink() || await realpath(dir) !== dir) return undefined;
+        const file = join(dir, 'qa-report.json');
+        const fileInfo = await lstat(file);
+        if (!fileInfo.isFile() || fileInfo.isSymbolicLink() || fileInfo.size > MAX_SAVED_REPORT_BYTES ||
+          await realpath(file) !== file) return undefined;
+        const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+        let contents: string;
+        try {
+          const opened = await handle.stat();
+          if (!opened.isFile() || opened.size > MAX_SAVED_REPORT_BYTES) return undefined;
+          contents = await handle.readFile('utf8');
+        } finally { await handle.close(); }
+        const report = parseArchivedReportEnvelope(JSON.parse(contents));
+        return report?.runId === id ? report : undefined;
+      };
+      let original: QAReport | undefined;
+      try { original = await readReport(originalId); } catch { /* Invalid saved run. */ }
+      if (!original) throw new Error(localized(locale, 'This is not a valid saved run.', '유효한 저장 실행이 아닙니다.'));
+      const matches: { id: string; status: QAReport['status']; mtime: number }[] = [];
+      for (const id of await readdir(root)) {
+        if (!RUN_ID.test(id) || id === originalId) continue;
+        try {
+          const report = await readReport(id);
+          if (report?.parentRunId !== originalId) continue;
+          matches.push({ id, status: report.status, mtime: (await lstat(join(root, id))).mtimeMs });
+        } catch { /* Incomplete or unsafe saved run. */ }
+      }
+      matches.sort((a, b) => b.mtime - a.mtime || a.id.localeCompare(b.id));
+      if (!matches.length) {
+        console.log(localized(locale, 'No runs were prepared from this report.', '이 리포트에서 시작한 재실행이 없습니다.'));
+        return;
+      }
+      for (const item of matches) console.log(`${item.status}\t.flowqa/runs/${item.id}`);
+      return;
     }
     if (command === 'compare') {
       const load = async (dir: string | undefined) => {

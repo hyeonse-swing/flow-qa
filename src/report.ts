@@ -69,7 +69,8 @@ export interface QAReport {
   usage?: { modelTokens: number; modelCachedTokens?: number; estimatedCostUsd?: number };
 }
 
-const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const MAX_SAVED_REPORT_BYTES = 2 * 1024 * 1024;
 const archiveEnvelopeSchema = z.object({
   schemaVersion: z.literal('flow-qa/report-1'), runId: z.string().regex(RUN_ID), suiteId: idSchema,
   parentRunId: z.string().regex(RUN_ID).optional(),
