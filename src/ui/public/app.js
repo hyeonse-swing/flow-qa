@@ -5,7 +5,7 @@
   const t = i18n.t;
   const names = { scenario: 'nav.scenario', library: 'nav.library', history: 'nav.history', settings: 'nav.settings' };
   const defaultReportFilter = () => ({ search: '', status: 'all', sort: 'recorded', repeatedOnly: false });
-  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportParent: null, reportMarkdown: '', selectedRun: '', reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false, parentRunId: '' }, view: 'scenario' };
+  const app = { state: null, connected: false, displayTargets: [], draft: null, selectedCaseIds: new Set(), script: '', neutralScript: '', scriptRevision: 0, savedFile: '', savedHash: '', origin: 'none', sourceFlow: '', boundSource: null, stale: false, dirty: false, busy: false, planning: false, planRequest: 0, stopping: false, report: null, reportParent: null, reportMarkdown: '', selectedRun: '', reportRequest: 0, reportLoading: false, reportFilter: defaultReportFilter(), rerunOrigin: null, rerunTargetMismatch: false, navigationVersion: 0, comparison: null, comparisonRequest: 0, comparisonBusy: false, comparisonStatus: 'comparison.selectBoth', comparisonPins: { baseline: null, current: null }, comparisonSelectionGeneration: 0, comparisonValidation: null, history: { runs: [], nextCursor: null, pagesLoaded: 0, loaded: false, loading: false, request: 0, debounce: null, kind: null, error: null, updatesAvailable: false, pendingRecentUpdate: false, parentRunId: '' }, view: 'scenario' };
 
   function el(tag, className, value) {
     const node = document.createElement(tag);
@@ -732,7 +732,35 @@
     catch (error) { showError(error); }
     finally { app.stopping = false; readiness(); }
   }
-  async function loadReport(runId) { await work(async () => { const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`); if (app.selectedRun !== runId) app.reportFilter = defaultReportFilter(); app.report = result.report; app.reportParent = result.parentRun || null; app.reportMarkdown = result.markdown; app.selectedRun = runId; renderReport(); readiness(); $('report-panel').hidden = false; $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  async function loadReport(runId) {
+    if (app.busy && !app.reportLoading) return;
+    const request = ++app.reportRequest;
+    app.reportLoading = true;
+    app.busy = true;
+    readiness();
+    notice('');
+    try {
+      const result = await api(`/api/report?runId=${encodeURIComponent(runId)}`);
+      if (request !== app.reportRequest) return;
+      if (app.selectedRun !== runId) app.reportFilter = defaultReportFilter();
+      app.report = result.report;
+      app.reportParent = result.parentRun || null;
+      app.reportMarkdown = result.markdown;
+      app.selectedRun = runId;
+      renderReport();
+      readiness();
+      $('report-panel').hidden = false;
+      $('report-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      if (request === app.reportRequest) showError(error);
+    } finally {
+      if (request === app.reportRequest) {
+        app.reportLoading = false;
+        app.busy = false;
+        readiness();
+      }
+    }
+  }
   async function prepareFailedCases() { await work(async () => {
     const runId = app.selectedRun;
     const report = app.report;

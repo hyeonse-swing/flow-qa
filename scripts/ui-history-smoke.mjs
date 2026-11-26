@@ -84,6 +84,36 @@ try {
   await page.locator('#history-load-more').click(); await idle();
   assert.equal(await rows().count(), 71);
   assert.equal(new Set(await rows().allTextContents()).size, 71);
+  // A second report click must replace an earlier in-flight selection.
+  for (const staleFails of [false, true]) {
+    let releaseReport; let markReport;
+    const heldReport = new Promise(resolve => { releaseReport = resolve; });
+    const reportIntercepted = new Promise(resolve => { markReport = resolve; });
+    const staleRunId = fixtures[69].runId;
+    const selectedRunId = fixtures[68].runId;
+    const holdReport = async route => {
+      if (new URL(route.request().url()).searchParams.get('runId') !== staleRunId) {
+        await route.continue(); return;
+      }
+      const response = staleFails ? null : await route.fetch();
+      markReport();
+      await heldReport;
+      if (staleFails) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Stale report failed' }) });
+      else await route.fulfill({ response });
+    };
+    await page.route('**/api/report?*', holdReport);
+    await page.locator(`[data-run-id="${staleRunId}"] [data-action="view-report"]`).click();
+    await reportIntercepted;
+    assert.equal(await page.locator(`[data-run-id="${selectedRunId}"] [data-action="view-report"]`).isEnabled(), true);
+    await page.locator(`[data-run-id="${selectedRunId}"] [data-action="view-report"]`).click();
+    await page.waitForFunction(id => document.querySelector('#report-heading').textContent.includes(id), selectedRunId);
+    const staleResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('runId') === staleRunId);
+    releaseReport();
+    await staleResponse;
+    assert.ok((await page.locator('#report-heading').textContent()).includes(selectedRunId));
+    assert.equal(await page.locator('#notice').isHidden(), true, 'A stale report failure cannot replace the selected report.');
+    await page.unroute('**/api/report?*', holdReport);
+  }
   await search(`  ${oldest.runId.toUpperCase()}  `);
   assert.equal(await rows().count(), 1, 'Search reaches a report older than the recent 50.');
   assert.ok((await rows().textContent()).includes(oldest.runId));
@@ -174,7 +204,7 @@ try {
   await page.unroute('**/api/runs?*', holdPage);
   await page.screenshot({ path: path.join(artifacts, 'history-en.png'), fullPage: true });
   assert.deepEqual(errors, []);
-  const result = { fixtureReports: 72, pageSize: 50, fullHistorySearch: true, statusAndQuery: true, appendRetry: true, pagesPreserved: true, refreshUpdates: true, inFlightUpdateRetained: true, noDuplicates: true, lateResponseIgnored: true, olderReportDownload: true, olderReportPreparation: true, draftPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
+  const result = { fixtureReports: 72, pageSize: 50, fullHistorySearch: true, statusAndQuery: true, appendRetry: true, pagesPreserved: true, refreshUpdates: true, inFlightUpdateRetained: true, noDuplicates: true, lateResponseIgnored: true, latestReportSelection: true, staleReportErrorIgnored: true, olderReportDownload: true, olderReportPreparation: true, draftPreserved: true, bilingual: true, mobileOverflow: false, modelCalls: 0 };
   await writeFile(path.join(artifacts, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result, null, 2));
 } finally {
