@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { playwrightInstallInvocation } from '../src/cli.ts';
 import { failureReport, normalizeReport1 } from '../src/report.ts';
 import type { Suite } from '../src/schema.ts';
@@ -190,7 +191,20 @@ test('CLI selects repeated case IDs without executing or hiding unselected cases
     assert.ok(report.cases.every((item: {status:string}) => item.status === 'blocked'));
     const snapshot = JSON.parse(await readFile(join(dir, '.flowqa/runs', runId!, 'suite.json'), 'utf8'));
     assert.equal(snapshot.cases.length, 3);
-    const output = (await qa('compare', `.flowqa/runs/${runId}`, `.flowqa/runs/${runId}`)).stdout;
+    const copiedRun = join(dir, 'copied-run');
+    await mkdir(copiedRun);
+    await writeFile(join(copiedRun, 'qa-report.json'), JSON.stringify(report));
+    for (const other of [`.flowqa/runs/${runId}`, 'copied-run']) {
+      await assert.rejects(qa('compare', `.flowqa/runs/${runId}`, other), (error: unknown) => {
+        const result = error as { code: number; stdout: string; stderr: string };
+        assert.equal(result.code, 2);
+        assert.equal(result.stdout, '');
+        assert.match(result.stderr, /different runs/);
+        return true;
+      });
+    }
+    await writeFile(join(copiedRun, 'qa-report.json'), JSON.stringify({ ...report, runId: randomUUID() }));
+    const output = (await qa('compare', `.flowqa/runs/${runId}`, 'copied-run')).stdout;
     assert.match(output, /omitted cases were not evaluated/);
   } finally { await rm(dir, {recursive:true,force:true}); }
 });

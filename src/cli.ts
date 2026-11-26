@@ -367,6 +367,9 @@ export async function main(args: string[]): Promise<void> {
         return data as QAReport;
       };
       const before = await load(arg), after = await load(second);
+      if (before.runId && before.runId === after.runId) {
+        throw new Error(localized(locale, 'A comparison needs two different runs.', '서로 다른 두 실행을 선택해야 합니다.'));
+      }
       const sameSelection = JSON.stringify(before.cases.map((item) => item.id).sort()) === JSON.stringify(after.cases.map((item) => item.id).sort());
       const comparable = before.suiteId === after.suiteId && before.suiteHash === after.suiteHash && sameReportTarget(before.target, after.target) && sameSelection;
       console.log(comparable ? localized(locale, 'Comparing the same suite, target and case selection (check external data state separately)', '동일 명세·대상·케이스 범위 비교 (외부 데이터 상태는 별도 확인)') : localized(locale, 'Suite, target or case selection differs; no direct regression verdict is made.', '명세·대상 또는 케이스 범위가 달라 직접적인 회귀 판정은 하지 않습니다.'));
